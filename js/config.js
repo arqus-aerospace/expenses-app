@@ -16,7 +16,7 @@ export const CONFIG = {
   // -- Microsoft Entra ID (Azure AD) app registration ------------------------
   // Create a free "Single-page application" registration in Entra ID and put
   // its Application (client) ID here. See README → Setup, step 1.
-  clientId: "",                                // e.g. "6f1b2c3d-...."
+  clientId: "ca05b475-986e-4b68-be8b-f388e0070a89",                                // e.g. "6f1b2c3d-...."
   tenant: "arqusaerospace.com",                // your M365 tenant domain
 
   // -- SharePoint destination -------------------------------------------------
