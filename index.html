@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#1f3a5f" />
+  <title>Arqus Expenses</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+
+  <!-- ======================= Access-code gate ======================= -->
+  <section id="screen-gate" class="screen center" hidden>
+    <div class="card gate-card">
+      <img src="assets/icon.svg" alt="" class="logo" />
+      <h1>Arqus Expenses</h1>
+      <p class="sub">Enter the company access code</p>
+      <input id="gate-input" class="gate-input" type="password" inputmode="numeric"
+             autocomplete="one-time-code" maxlength="8" placeholder="••••" aria-label="Access code" />
+      <p id="gate-error" class="error" hidden>That code is not correct.</p>
+      <button id="gate-btn" class="btn primary wide">Unlock</button>
+    </div>
+  </section>
+
+  <!-- ==================== Sign-in / not configured =================== -->
+  <section id="screen-connect" class="screen center" hidden>
+    <div class="card gate-card">
+      <img src="assets/icon.svg" alt="" class="logo" />
+      <h1>Arqus Expenses</h1>
+      <div id="connect-ready" hidden>
+        <p class="sub">Sign in with your Arqus Microsoft&nbsp;365 account to submit
+          expenses straight into SharePoint.</p>
+        <button id="signin-btn" class="btn primary wide">Sign in with Microsoft</button>
+      </div>
+      <div id="connect-unconfigured" hidden>
+        <p class="sub">The Microsoft&nbsp;365 connection isn’t configured yet
+          (<code>js/config.js</code> → <code>clientId</code>). See the README
+          for the 10-minute setup.</p>
+        <button id="demo-btn" class="btn primary wide">Explore in demo mode</button>
+      </div>
+      <p id="connect-error" class="error" hidden></p>
+    </div>
+  </section>
+
+  <!-- ============================ The app ============================ -->
+  <section id="screen-app" class="screen" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/icon.svg" alt="" class="logo small" />
+        <span>Arqus Expenses</span>
+        <span id="demo-badge" class="badge" hidden>Demo data</span>
+      </div>
+      <div class="topbar-right">
+        <a id="workbook-link" class="btn ghost small-btn" target="_blank" rel="noopener" hidden>Open&nbsp;Excel</a>
+        <span id="user-chip" class="user-chip"></span>
+        <button id="signout-btn" class="btn ghost small-btn">Sign out</button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="submit" role="tab">New expense</button>
+      <button class="tab" data-view="dashboard" role="tab">Dashboard</button>
+      <button class="tab" data-view="approvals" role="tab" id="tab-approvals" hidden>
+        Approvals <span id="approvals-count" class="pill" hidden></span>
+      </button>
+    </nav>
+
+    <!-- ------------------------- Submit ------------------------- -->
+    <main id="view-submit" class="view">
+      <div class="card form-card">
+        <div id="dropzone" class="dropzone" tabindex="0" role="button"
+             aria-label="Add a receipt: drop a file, click to browse, or take a photo">
+          <div id="drop-idle">
+            <div class="drop-icon">📄</div>
+            <p><b>Drop your receipt here</b> or click to browse</p>
+            <p class="sub">Photos, PDFs, scans — up to 25&nbsp;MB</p>
+            <button id="camera-btn" class="btn ghost" type="button">📷 Take a photo</button>
+          </div>
+          <div id="drop-preview" hidden>
+            <img id="preview-img" alt="Receipt preview" hidden />
+            <div id="preview-file" class="file-chip" hidden></div>
+            <button id="remove-file" class="btn ghost small-btn" type="button">Remove</button>
+          </div>
+        </div>
+        <input id="file-input" type="file" accept="image/*,.pdf,.heic,.doc,.docx,.eml,.msg" hidden />
+        <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
+
+        <form id="expense-form" autocomplete="off">
+          <div class="grid2">
+            <label>Amount
+              <div class="amount-row">
+                <input id="f-amount" type="number" step="0.01" min="0.01" required
+                       inputmode="decimal" placeholder="0.00" />
+                <select id="f-currency" aria-label="Currency"></select>
+              </div>
+            </label>
+            <label>Date
+              <input id="f-date" type="date" required />
+            </label>
+            <label>Category
+              <select id="f-category" required></select>
+            </label>
+            <label>Paid with
+              <select id="f-payment"></select>
+            </label>
+          </div>
+          <label>Description
+            <input id="f-desc" type="text" required maxlength="140"
+                   placeholder="e.g. Taxi to Toulouse supplier visit" />
+          </label>
+          <button id="submit-btn" class="btn primary wide" type="submit">Submit expense</button>
+          <p id="submit-status" class="status" hidden></p>
+        </form>
+      </div>
+
+      <div id="submit-done" class="card form-card center-text" hidden>
+        <div class="big-check">✓</div>
+        <h2>Expense submitted</h2>
+        <p class="sub" id="done-summary"></p>
+        <p class="sub">It’s now in SharePoint and waiting for approval.</p>
+        <button id="another-btn" class="btn primary">Add another expense</button>
+      </div>
+    </main>
+
+    <!-- ----------------------- Dashboard ------------------------ -->
+    <main id="view-dashboard" class="view" hidden>
+      <div class="dash-head">
+        <div class="range-chips" id="range-chips" role="group" aria-label="Time range">
+          <button data-range="3m" class="chip">3 months</button>
+          <button data-range="6m" class="chip">6 months</button>
+          <button data-range="12m" class="chip active">12 months</button>
+          <button data-range="ytd" class="chip">Year to date</button>
+        </div>
+        <button id="refresh-btn" class="btn ghost small-btn">↻ Refresh</button>
+      </div>
+
+      <div id="dash-loading" class="card loading-card">Loading expenses…</div>
+      <div id="dash-content" hidden>
+        <div class="kpi-grid">
+          <div class="card kpi">
+            <div class="kpi-label">This month</div>
+            <div class="kpi-value" id="kpi-month"></div>
+            <div class="kpi-delta" id="kpi-month-delta"></div>
+            <div class="kpi-spark" id="kpi-spark"></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Average per month</div>
+            <div class="kpi-value" id="kpi-avg"></div>
+            <div class="kpi-delta muted" id="kpi-avg-sub"></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Awaiting approval</div>
+            <div class="kpi-value" id="kpi-pending"></div>
+            <div class="kpi-delta muted" id="kpi-pending-sub"></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Year to date</div>
+            <div class="kpi-value" id="kpi-ytd"></div>
+            <div class="kpi-delta muted" id="kpi-ytd-sub"></div>
+          </div>
+        </div>
+
+        <div class="chart-grid">
+          <div class="card chart-card wide-card">
+            <h3 id="title-monthly">Expenses per month</h3>
+            <div id="chart-monthly" class="chart"></div>
+          </div>
+          <div class="card chart-card wide-card">
+            <h3 id="title-cumulative">Spend over time (cumulative)</h3>
+            <div id="chart-cumulative" class="chart"></div>
+          </div>
+          <div class="card chart-card">
+            <h3>By category</h3>
+            <div id="chart-category" class="chart"></div>
+          </div>
+          <div class="card chart-card">
+            <h3>By employee</h3>
+            <div id="chart-employee" class="chart"></div>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <h3>Recent expenses</h3>
+          <div class="table-scroll">
+            <table id="recent-table">
+              <thead>
+                <tr><th>Date</th><th>Employee</th><th>Category</th><th>Description</th>
+                    <th class="num">Amount</th><th>Status</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ----------------------- Approvals ------------------------ -->
+    <main id="view-approvals" class="view" hidden>
+      <div id="approvals-loading" class="card loading-card">Loading…</div>
+      <div id="approvals-empty" class="card center-text" hidden>
+        <div class="big-check">✓</div>
+        <h2>All caught up</h2>
+        <p class="sub">No expenses waiting for approval.</p>
+      </div>
+      <div id="approvals-list"></div>
+    </main>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="vendor/msal-browser.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
