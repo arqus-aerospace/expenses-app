@@ -77,14 +77,21 @@ Because it's a plain Excel file in SharePoint you keep full ownership: open
 it in Excel/Teams, add sheets, pivot it, feed Power BI from it. The app only
 ever touches the `Expenses` table. (Template source: `tools/make_template.py`.)
 
-### The approval step
+### Roles: founders vs everyone else
 
+- **Founders** (Marnix, Stijn, Anton — the `approvers` list in
+  `js/config.js`) see the company-wide **Dashboard** and the **Approvals**
+  tab with a badge showing how many expenses are waiting. One tap on
+  Approve/Reject writes Status + who decided + when back into the Excel row,
+  with the receipt link on each card for checking the actual document.
+- **Everyone else** doesn't get the company dashboard at all. Instead they
+  get **My expenses**: a personal record of everything they have filed
+  (date, vendor, amounts, approval status, receipt link) plus their own
+  monthly/yearly totals — and nothing about anyone else's spending.
 - Everyone submits; new expenses start as **Pending**.
-- Marnix, Stijn and Anton (list in `js/config.js`) get an extra
-  **Approvals** tab with a badge showing how many are waiting. One tap on
-  Approve/Reject writes Status + who decided + when back into the Excel row.
-- Approvers see the receipt link on each card, so they can check the actual
-  document before deciding.
+
+Preview either role without signing in: `?demo=1` (founder view) or
+`?demo=employee` (restricted view).
 
 ### Do we need AI? (assessment)
 
@@ -144,11 +151,14 @@ menu → **Add to Home Screen** — from then on it behaves like an app.
 - **Real security is the Microsoft sign-in.** Only accounts in the Arqus
   tenant get in, all writes are audited under the real user, and access can
   be revoked centrally in Entra ID like any other app.
-- Approver rights are enforced by the workflow (UI + who's recorded as
-  decider), not by SharePoint permissions: anyone with edit rights on the
-  site could technically edit the workbook directly in Excel. For a
-  small-team internal tool that trade-off is normal; if you ever need hard
-  enforcement, move the workbook to a site only approvers can edit.
+- Role separation (founder dashboard vs personal list) and approver rights
+  are enforced **in the app's UI**, not by SharePoint permissions. Because
+  employees write rows to the workbook as themselves, they necessarily have
+  edit rights on it — so a technically savvy employee could bypass the app
+  and open the workbook directly in SharePoint. For a small-team internal
+  tool that trade-off is normal; hard enforcement would require a small
+  server (e.g. an Azure Function) between the app and SharePoint, which can
+  be added later without changing the app's flow.
 
 ## Development
 

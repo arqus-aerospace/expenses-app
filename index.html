@@ -63,7 +63,8 @@
 
     <nav class="tabs" role="tablist">
       <button class="tab active" data-view="submit" role="tab">New expense</button>
-      <button class="tab" data-view="dashboard" role="tab">Dashboard</button>
+      <button class="tab" data-view="dashboard" role="tab" id="tab-dashboard" hidden>Dashboard</button>
+      <button class="tab" data-view="mine" role="tab" id="tab-mine" hidden>My expenses</button>
       <button class="tab" data-view="approvals" role="tab" id="tab-approvals" hidden>
         Approvals <span id="approvals-count" class="pill" hidden></span>
       </button>
@@ -217,6 +218,41 @@
               <tbody></tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ---------------- My expenses (non-founders) --------------- -->
+    <main id="view-mine" class="view" hidden>
+      <div id="mine-loading" class="card loading-card">Loading your expenses…</div>
+      <div id="mine-content" hidden>
+        <div class="kpi-grid">
+          <div class="card kpi">
+            <div class="kpi-label">Filed this month</div>
+            <div class="kpi-value" id="mine-month"></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Filed this year</div>
+            <div class="kpi-value" id="mine-year"></div>
+            <div class="kpi-delta muted" id="mine-year-sub"></div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-label">Awaiting approval</div>
+            <div class="kpi-value" id="mine-pending"></div>
+          </div>
+        </div>
+        <div class="card table-card">
+          <h3>My filed expenses</h3>
+          <div class="table-scroll">
+            <table id="mine-table">
+              <thead>
+                <tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th>
+                    <th class="num">Gross</th><th class="num">VAT</th><th>Status</th><th>Receipt</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="sub" id="mine-empty" hidden>Nothing filed yet — your submissions will appear here.</p>
         </div>
       </div>
     </main>

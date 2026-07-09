@@ -12,6 +12,7 @@ const show = (el, on = true) => { el.hidden = !on; };
 
 let demo = false;
 let user = null;
+let founder = false;   // founders (approver emails) see Dashboard + Approvals
 let expenses = null;          // cached list
 let demoStore = null;
 let range = "12m";
@@ -107,7 +108,12 @@ function enterApp() {
   $("user-chip").textContent = user.name;
   show($("demo-badge"), demo);
   $("signout-btn").textContent = demo ? "Exit demo" : "Sign out";
-  if (isApprover(user.email) || demo) show($("tab-approvals"));
+  // Founders get the company-wide dashboard and approvals; everyone else
+  // gets a personal record of their own filings instead.
+  founder = isApprover(user.email);
+  show($("tab-dashboard"), founder);
+  show($("tab-approvals"), founder);
+  show($("tab-mine"), !founder);
   if (!demo) {
     graph.workbookWebUrl()
       .then((url) => { $("workbook-link").href = url; show($("workbook-link")); })
@@ -123,10 +129,13 @@ function enterApp() {
 // ----------------------------------------------------------------- tabs ----
 
 function switchView(name) {
+  // non-founders can never land on the company views
+  if (!founder && (name === "dashboard" || name === "approvals")) name = "mine";
   document.querySelectorAll(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.view === name));
-  for (const v of ["submit", "dashboard", "approvals"]) show($(`view-${v}`), v === name);
+  for (const v of ["submit", "dashboard", "mine", "approvals"]) show($(`view-${v}`), v === name);
   if (name === "dashboard") renderDashboard();
+  if (name === "mine") renderMine();
   if (name === "approvals") renderApprovals();
 }
 
@@ -490,6 +499,58 @@ async function renderDashboard() {
     });
 }
 
+// -------------------------------------------------- my expenses (staff) ----
+
+async function renderMine() {
+  show($("mine-loading"));
+  show($("mine-content"), false);
+  try {
+    if (!expenses) await refreshData();
+  } catch (e) {
+    $("mine-loading").textContent = `Could not load: ${e.message}`;
+    return;
+  }
+  show($("mine-loading"), false);
+  show($("mine-content"));
+
+  const mine = expenses
+    .filter((x) => x.email === user.email)
+    .sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+
+  const today = new Date();
+  const mKey = today.toISOString().slice(0, 7);
+  const counted = (x) => x.status !== "Rejected";
+  const sum = (list) => list.reduce((a, x) => a + x.amount, 0);
+  const cur = CONFIG.defaultCurrency;
+
+  $("mine-month").textContent =
+    fmtMoney(sum(mine.filter((x) => counted(x) && x.dateISO.startsWith(mKey))), cur);
+  const yearMine = mine.filter(
+    (x) => counted(x) && x.dateISO.startsWith(String(today.getFullYear())));
+  $("mine-year").textContent = fmtMoney(sum(yearMine), cur);
+  $("mine-year-sub").textContent = `${yearMine.length} expense${yearMine.length === 1 ? "" : "s"}`;
+  $("mine-pending").textContent = String(mine.filter((x) => x.status === "Pending").length);
+
+  const tbody = $("mine-table").querySelector("tbody");
+  tbody.innerHTML = "";
+  for (const x of mine) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${x.dateISO}</td>
+      <td>${esc(x.vendor || "—")}</td>
+      <td>${esc(x.category)}</td>
+      <td class="desc-cell">${esc(x.description)}</td>
+      <td class="num">${fmtMoney(x.amount, x.currency)}</td>
+      <td class="num">${x.vat ? fmtMoney(x.vat, x.currency) : "—"}</td>
+      <td><span class="status-pill ${x.status.toLowerCase()}">${x.status}</span></td>
+      <td>${x.receiptUrl
+        ? `<a href="${esc(x.receiptUrl)}" target="_blank" rel="noopener">view ↗</a>`
+        : esc(x.receipt || "—")}</td>`;
+    tbody.appendChild(tr);
+  }
+  show($("mine-empty"), mine.length === 0);
+}
+
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -579,7 +640,11 @@ function wireChrome() {
   $("demo-btn").addEventListener("click", () => {
     demo = true;
     demoStore = demoExpenses();
-    user = { name: "Marnix (demo)", email: CONFIG.approvers[0] };
+    // ?demo=employee previews the restricted (non-founder) experience
+    const asEmployee = new URLSearchParams(location.search).get("demo") === "employee";
+    user = asEmployee
+      ? { name: "Elena (demo)", email: "elena@arqusaerospace.com" }
+      : { name: "Marnix (demo)", email: CONFIG.approvers[0] };
     enterApp();
   });
   $("gate-btn").addEventListener("click", tryUnlock);
