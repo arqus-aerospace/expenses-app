@@ -1,0 +1,17 @@
+{
+  "name": "Arqus Expenses",
+  "short_name": "Expenses",
+  "description": "Snap a receipt, it lands in SharePoint and the expense tracker Excel.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f9f9f7",
+  "theme_color": "#1f3a5f",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
