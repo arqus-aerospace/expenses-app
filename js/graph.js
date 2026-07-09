@@ -133,6 +133,7 @@ export async function uploadReceipt(file, { id, dateISO }) {
 // ------------------------------------------------------------- workbook ----
 
 let workbookId = null;
+let migrationDone = false; // one-shot guard for the archive-and-recreate path
 
 const wbPath = () =>
   `${itemPath(`${CONFIG.rootFolder}/${CONFIG.workbookName}`)}`;
@@ -181,13 +182,36 @@ export async function ensureWorkbook() {
     }
   }
 
-  // Make sure the table exists (idempotent).
+  // Make sure the table exists (idempotent) and matches the app's schema.
   try {
-    await gfetch(wbApi(`/tables('${CONFIG.tableName}')?$select=name`));
+    const cols = await gfetch(wbApi(`/tables('${CONFIG.tableName}')/columns?$select=name`));
+    const names = cols.value.map((c) => c.name);
+    const matches =
+      names.length === COLUMNS.length && COLUMNS.every((c, i) => names[i] === c);
+    if (!matches) {
+      // A workbook from an older app version (different columns) — writing
+      // into it would corrupt rows. Archive it and provision a fresh one;
+      // nothing is deleted, the old file is just renamed.
+      if (migrationDone) {
+        throw new Error(
+          "The Excel tracker's columns don't match this app version. " +
+          "Remove or rename Expenses/expense-tracker.xlsx in SharePoint and try again."
+        );
+      }
+      migrationDone = true;
+      const backup = `expense-tracker-backup-${Date.now()}.xlsx`;
+      await gfetch(`/drives/${driveId}/items/${workbookId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: backup }),
+      });
+      console.warn(`Outdated expense workbook archived as ${backup}; recreating.`);
+      workbookId = null;
+      return ensureWorkbook();
+    }
   } catch (e) {
     if (e.status !== 404) throw e;
     await withSession(async (headers) => {
-      const lastCol = String.fromCharCode(64 + COLUMNS.length); // N
+      const lastCol = String.fromCharCode(64 + COLUMNS.length); // R
       const table = await gfetch(wbApi("/tables/add"), {
         method: "POST",
         headers,
@@ -248,6 +272,9 @@ export async function addExpense(exp) {
     "",
     "",
   ];
+  if (row.length !== COLUMNS.length) {
+    throw new Error(`Internal error: row has ${row.length} values, table expects ${COLUMNS.length}`);
+  }
   await withSession((headers) =>
     gfetch(wbApi(`/tables('${CONFIG.tableName}')/rows/add`), {
       method: "POST",
