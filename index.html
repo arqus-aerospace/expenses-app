@@ -37,9 +37,9 @@
         <button id="signin-btn" class="btn primary wide">Sign in with Microsoft</button>
       </div>
       <div id="connect-unconfigured" hidden>
-        <p class="sub">The Microsoft&nbsp;365 connection isn’t configured yet
-          (<code>js/config.js</code> → <code>clientId</code>). See the README
-          for the 10-minute setup.</p>
+        <p class="sub" id="unconfigured-note">The Microsoft&nbsp;365 connection isn’t
+          configured yet (<code>js/config.js</code> → <code>clientId</code>).
+          See the README for the 10-minute setup.</p>
         <button id="demo-btn" class="btn primary wide">Explore in demo mode</button>
       </div>
       <p id="connect-error" class="error" hidden></p>
@@ -91,7 +91,7 @@
 
         <form id="expense-form" autocomplete="off">
           <div class="grid2">
-            <label>Amount
+            <label>Amount (gross, incl. VAT)
               <div class="amount-row">
                 <input id="f-amount" type="number" step="0.01" min="0.01" required
                        inputmode="decimal" placeholder="0.00" />
@@ -100,6 +100,13 @@
             </label>
             <label>Date
               <input id="f-date" type="date" required />
+            </label>
+            <label>Vendor / merchant
+              <input id="f-vendor" type="text" required maxlength="80"
+                     placeholder="e.g. Deutsche Bahn" />
+            </label>
+            <label>VAT rate
+              <select id="f-vat" aria-label="VAT rate"></select>
             </label>
             <label>Category
               <select id="f-category" required></select>
@@ -110,11 +117,27 @@
           </div>
           <label>Description
             <input id="f-desc" type="text" required maxlength="140"
-                   placeholder="e.g. Taxi to Toulouse supplier visit" />
+                   placeholder="e.g. Train tickets trade fair Berlin" />
           </label>
-          <button id="submit-btn" class="btn primary wide" type="submit">Submit expense</button>
+          <p id="vat-hint" class="sub vat-hint"></p>
+          <button id="submit-btn" class="btn primary wide" type="submit">Review &amp; submit</button>
           <p id="submit-status" class="status" hidden></p>
         </form>
+      </div>
+
+      <!-- Review-before-send: summary + countdown, with time to undo -->
+      <div id="review-card" class="card form-card" hidden>
+        <h2>Check before it’s sent</h2>
+        <dl class="review-list" id="review-list"></dl>
+        <div class="review-countdown">
+          <div class="countbar"><div id="countbar-fill" class="countbar-fill"></div></div>
+          <p class="sub" id="review-timer"></p>
+        </div>
+        <div class="review-actions">
+          <button id="review-cancel" class="btn ghost" type="button">← Go back &amp; edit</button>
+          <button id="review-send" class="btn primary" type="button">Send now</button>
+        </div>
+        <p id="review-status" class="status" hidden></p>
       </div>
 
       <div id="submit-done" class="card form-card center-text" hidden>
@@ -188,8 +211,8 @@
           <div class="table-scroll">
             <table id="recent-table">
               <thead>
-                <tr><th>Date</th><th>Employee</th><th>Category</th><th>Description</th>
-                    <th class="num">Amount</th><th>Status</th></tr>
+                <tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th>
+                    <th class="num">Gross</th><th class="num">VAT</th><th>Status</th></tr>
               </thead>
               <tbody></tbody>
             </table>

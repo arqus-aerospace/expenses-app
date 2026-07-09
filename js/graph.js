@@ -234,9 +234,13 @@ export async function addExpense(exp) {
     toSerial(exp.dateISO),
     exp.employee,
     exp.email,
+    exp.vendor,
     exp.category,
     exp.description,
-    exp.amount,
+    exp.amount,       // gross
+    exp.vatRate,      // fraction, e.g. 0.19
+    exp.vat,
+    exp.net,
     exp.currency,
     exp.payment,
     exp.receiptUrl ? `=HYPERLINK("${exp.receiptUrl}","${exp.receiptName}")` : "",
@@ -264,7 +268,7 @@ export async function listExpenses() {
   const formulas = range.formulas.slice(1);
   return dataRows
     .map((v, i) => {
-      const link = String(formulas[i]?.[10] ?? "").match(/HYPERLINK\("([^"]+)"/);
+      const link = String(formulas[i]?.[14] ?? "").match(/HYPERLINK\("([^"]+)"/);
       return {
         rowIndex: i,
         id: String(v[0] ?? ""),
@@ -272,16 +276,20 @@ export async function listExpenses() {
         dateISO: serialToISO(v[2]),
         employee: String(v[3] ?? ""),
         email: String(v[4] ?? "").toLowerCase(),
-        category: String(v[5] ?? ""),
-        description: String(v[6] ?? ""),
-        amount: Number(v[7]) || 0,
-        currency: String(v[8] ?? CONFIG.defaultCurrency),
-        payment: String(v[9] ?? ""),
-        receipt: String(v[10] ?? ""),
+        vendor: String(v[5] ?? ""),
+        category: String(v[6] ?? ""),
+        description: String(v[7] ?? ""),
+        amount: Number(v[8]) || 0,     // gross
+        vatRate: Number(v[9]) || 0,
+        vat: Number(v[10]) || 0,
+        net: Number(v[11]) || 0,
+        currency: String(v[12] ?? CONFIG.defaultCurrency),
+        payment: String(v[13] ?? ""),
+        receipt: String(v[14] ?? ""),
         receiptUrl: link ? link[1] : "",
-        status: String(v[11] ?? "Pending"),
-        decidedBy: String(v[12] ?? ""),
-        decidedOn: fromSerial(v[13]),
+        status: String(v[15] ?? "Pending"),
+        decidedBy: String(v[16] ?? ""),
+        decidedOn: fromSerial(v[17]),
       };
     })
     .filter((e) => e.id);
@@ -295,12 +303,13 @@ export async function decideExpense(rowIndex, status, decidedBy) {
       wbApi(`/tables('${CONFIG.tableName}')/rows/itemAt(index=${rowIndex})/range?$select=address`),
       { headers }
     );
-    // address looks like "Data!A5:N5" -> patch L5:N5 on that sheet
+    // address looks like "Data!A5:R5" -> patch the Status/DecidedBy/DecidedOn
+    // cells (P:R) on that row
     const m = range.address.match(/!([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
     if (!m) throw new Error(`Unexpected row address: ${range.address}`);
     const rowNum = m[2];
     await gfetch(
-      wbApi(`/worksheets('Data')/range(address='L${rowNum}:N${rowNum}')`),
+      wbApi(`/worksheets('Data')/range(address='P${rowNum}:R${rowNum}')`),
       {
         method: "PATCH",
         headers,

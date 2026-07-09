@@ -44,23 +44,30 @@ export const CONFIG = {
   currencies: ["EUR", "USD", "GBP", "CHF"],
   defaultCurrency: "EUR",
   categories: [
-    "Travel",
-    "Meals",
-    "Accommodation",
-    "Office supplies",
-    "Software & subscriptions",
-    "Equipment",
-    "Fuel & mileage",
-    "Training",
-    "Client entertainment",
-    "Other",
+    "Travel Expenses",
+    "Hardware",
+    "Software/SaaS",
+    "Infrastructure",
+    "Office & Team",
+    "Marketing/Sales",
+    "Legal & Notary",
+    "Miscellaneous",
   ],
   paymentMethods: [
-    "Company card",
-    "Personal card (reimburse)",
+    "Company Credit Card",
+    "Bank Transfer",
+    "Personal (reimburse)",
     "Cash (reimburse)",
-    "Invoice / to be paid",
   ],
+
+  // VAT rates offered in the form; the gross amount is entered and the app
+  // computes VAT + net. Default rate per category (German rates).
+  vatRates: [0.19, 0.07, 0],
+  defaultVatRate: 0.19,
+  vatByCategory: { "Travel Expenses": 0.07 },
+
+  // Seconds the post-submit review screen waits before auto-sending.
+  reviewSeconds: 10,
 
   // Max receipt size (MB). Larger files upload in chunks automatically;
   // this is just a hard cap to keep the library sane.
@@ -69,9 +76,9 @@ export const CONFIG = {
 
 // Columns of the Excel table, in order. Must match tools/make_template.py.
 export const COLUMNS = [
-  "ID", "Submitted", "Date", "Employee", "Email", "Category", "Description",
-  "Amount", "Currency", "Payment", "ReceiptFile", "Status", "DecidedBy",
-  "DecidedOn",
+  "ID", "Submitted", "Date", "Employee", "Email", "Vendor", "Category",
+  "Description", "Gross", "VAT %", "VAT", "Net", "Currency", "Payment",
+  "ReceiptFile", "Status", "DecidedBy", "DecidedOn",
 ];
 
 export const isConfigured = () => Boolean(CONFIG.clientId);

@@ -75,10 +75,14 @@ async function tryUnlock() {
 // ----------------------------------------------------------------- auth ----
 
 async function startAuth() {
-  if (!isConfigured()) {
+  // ?demo=1 keeps demo mode reachable even once the real connection is
+  // configured (handy for previews and automated tests).
+  const wantDemo = new URLSearchParams(location.search).has("demo");
+  if (!isConfigured() || wantDemo) {
     show($("screen-connect"));
     show($("connect-unconfigured"));
-    return;
+    show($("unconfigured-note"), !isConfigured());
+    if (!isConfigured()) return;
   }
   show($("connect-ready"));
   try {
@@ -129,7 +133,8 @@ function switchView(name) {
 // --------------------------------------------------------------- submit ----
 
 function setStatus(msg) {
-  const el = $("submit-status");
+  // progress lines while sending (shown on the review card, where send happens)
+  const el = $("review-status");
   el.textContent = msg;
   show(el, Boolean(msg));
 }
@@ -192,12 +197,53 @@ function wireSubmit() {
   fillSelect($("f-currency"), CONFIG.currencies, CONFIG.defaultCurrency);
   fillSelect($("f-category"), CONFIG.categories);
   fillSelect($("f-payment"), CONFIG.paymentMethods);
+  suggestVat();
+
+  // suggest the usual VAT rate for the category; live gross → VAT/net preview
+  $("f-category").addEventListener("change", suggestVat);
+  ["input", "change"].forEach((ev) => {
+    $("f-amount").addEventListener(ev, updateVatHint);
+    $("f-vat").addEventListener(ev, updateVatHint);
+  });
 
   $("expense-form").addEventListener("submit", onSubmit);
+  $("review-cancel").addEventListener("click", cancelReview);
+  $("review-send").addEventListener("click", () => finishReview(true));
   $("another-btn").addEventListener("click", () => {
     show($("submit-done"), false);
     show(document.querySelector("#view-submit .form-card"));
   });
+}
+
+function suggestVat() {
+  fillVatSelect(CONFIG.vatByCategory[$("f-category").value] ?? CONFIG.defaultVatRate);
+}
+
+function fillVatSelect(selected) {
+  const sel = $("f-vat");
+  sel.innerHTML = "";
+  for (const r of CONFIG.vatRates) {
+    const opt = document.createElement("option");
+    opt.value = String(r);
+    opt.textContent = `${Math.round(r * 100)}%`;
+    if (r === selected) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  updateVatHint();
+}
+
+function vatBreakdown() {
+  const gross = Math.round(parseFloat($("f-amount").value || "0") * 100) / 100;
+  const rate = Number($("f-vat").value) || 0;
+  const vat = Math.round((gross - gross / (1 + rate)) * 100) / 100;
+  return { gross, rate, vat, net: Math.round((gross - vat) * 100) / 100 };
+}
+
+function updateVatHint() {
+  const { gross, rate, vat, net } = vatBreakdown();
+  $("vat-hint").textContent = gross
+    ? `Net ${fmtMoney(net, $("f-currency").value)} + ${Math.round(rate * 100)}% VAT ${fmtMoney(vat, $("f-currency").value)}`
+    : "";
 }
 
 function fillSelect(sel, options, selected) {
@@ -210,41 +256,110 @@ function fillSelect(sel, options, selected) {
   }
 }
 
-async function onSubmit(e) {
+// Submit is a two-step flow: the form builds the expense, then a review card
+// shows a summary and counts down before actually sending, so a mistake can
+// be caught and undone.
+let reviewExp = null;
+let reviewTimer = null;
+
+function onSubmit(e) {
   e.preventDefault();
   if (!pendingFile && !confirm("No receipt attached — submit without one?")) return;
-
-  const btn = $("submit-btn");
-  btn.disabled = true;
-  const exp = {
+  const { gross, rate, vat, net } = vatBreakdown();
+  reviewExp = {
     id: `EXP-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
     dateISO: $("f-date").value,
     employee: user.name,
     email: user.email,
+    vendor: $("f-vendor").value.trim(),
     category: $("f-category").value,
     description: $("f-desc").value.trim(),
-    amount: Math.round(parseFloat($("f-amount").value) * 100) / 100,
+    amount: gross,
+    vatRate: rate,
+    vat,
+    net,
     currency: $("f-currency").value,
     payment: $("f-payment").value,
   };
+  showReview(reviewExp);
+}
+
+function showReview(exp) {
+  const cur = exp.currency;
+  const rows = [
+    ["Amount", `${fmtMoney(exp.amount, cur)} gross — ${fmtMoney(exp.net, cur)} net + ${Math.round(exp.vatRate * 100)}% VAT (${fmtMoney(exp.vat, cur)})`],
+    ["Vendor", exp.vendor],
+    ["Category", exp.category],
+    ["Date", exp.dateISO],
+    ["Paid with", exp.payment],
+    ["Description", exp.description],
+    ["Receipt", pendingFile ? pendingFile.name : "none attached"],
+  ];
+  $("review-list").innerHTML = rows
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`)
+    .join("");
+  show(document.querySelector("#view-submit .form-card"), false);
+  show($("review-card"));
+  $("review-send").disabled = false;
+  $("review-cancel").disabled = false;
+  show($("review-status"), false);
+
+  let left = CONFIG.reviewSeconds;
+  const fill = $("countbar-fill");
+  fill.style.transition = "none";
+  fill.style.width = "100%";
+  // force reflow so the transition restarts cleanly on repeat submissions
+  void fill.offsetWidth;
+  fill.style.transition = `width ${left}s linear`;
+  fill.style.width = "0%";
+  const tick = () => {
+    $("review-timer").textContent = `Sending automatically in ${left}s — press “Go back” to change something.`;
+    if (left-- <= 0) { finishReview(false); return; }
+    reviewTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+function cancelReview() {
+  clearTimeout(reviewTimer);
+  reviewTimer = null;
+  reviewExp = null;
+  show($("review-card"), false);
+  show(document.querySelector("#view-submit .form-card"));
+}
+
+async function finishReview(manual) {
+  if (!reviewExp) return;
+  clearTimeout(reviewTimer);
+  reviewTimer = null;
+  const exp = reviewExp;
+  reviewExp = null;
+  $("review-send").disabled = true;
+  $("review-cancel").disabled = true;
+  const rs = $("review-status");
+  rs.textContent = manual ? "Sending…" : "Time’s up — sending…";
+  show(rs);
   try {
     await api.submit(exp, pendingFile);
     setStatus("");
     expenses = null; // dashboard cache is stale now
     $("done-summary").textContent =
-      `${fmtMoney(exp.amount, exp.currency)} · ${exp.category} · ${exp.dateISO}`;
-    show(document.querySelector("#view-submit .form-card"), false);
+      `${fmtMoney(exp.amount, exp.currency)} · ${esc(exp.vendor)} · ${exp.category} · ${exp.dateISO}`;
+    show($("review-card"), false);
     show($("submit-done"));
     $("expense-form").reset();
     $("f-date").value = new Date().toISOString().slice(0, 10);
     fillSelect($("f-currency"), CONFIG.currencies, CONFIG.defaultCurrency);
+    suggestVat();
     clearFile();
     updateApprovalsBadge();
   } catch (err) {
     setStatus("");
+    // keep the filled form so nothing is lost — user can try again
+    reviewExp = null;
+    show($("review-card"), false);
+    show(document.querySelector("#view-submit .form-card"));
     toast(`Could not submit: ${err.message}`);
-  } finally {
-    btn.disabled = false;
   }
 }
 
@@ -347,9 +462,10 @@ async function renderDashboard() {
 
   // Employee breakdown — one measure, single hue
   hbarChart($("chart-employee"), {
-    items: rangeStats.byEmployee.slice(0, 8).map(([label, value]) => ({
-      label, value,
-      extra: `${inRange.filter((x) => x.employee === label && x.status !== "Rejected").length} expenses`,
+    items: rangeStats.byEmployee.slice(0, 8).map(([emp, value]) => ({
+      label: emp || "(imported)",
+      value,
+      extra: `${inRange.filter((x) => x.employee === emp && x.status !== "Rejected").length} expenses`,
     })),
     fmt: money,
   });
@@ -364,10 +480,11 @@ async function renderDashboard() {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${x.dateISO}</td>
-        <td>${esc(x.employee)}</td>
+        <td>${esc(x.vendor || x.employee || "—")}</td>
         <td>${esc(x.category)}</td>
         <td class="desc-cell">${esc(x.description)}</td>
         <td class="num">${fmtMoney(x.amount, x.currency)}</td>
+        <td class="num">${x.vat ? fmtMoney(x.vat, x.currency) : "—"}</td>
         <td><span class="status-pill ${x.status.toLowerCase()}">${x.status}</span></td>`;
       tbody.appendChild(tr);
     });
@@ -412,8 +529,8 @@ async function renderApprovals() {
       <div class="appr-main">
         <div class="appr-amount">${fmtMoney(item.amount, item.currency)}</div>
         <div class="appr-meta">
-          <b>${esc(item.employee)}</b> · ${esc(item.category)} · ${item.dateISO}<br>
-          <span class="sub">${esc(item.description)}</span>
+          <b>${esc(item.vendor || item.employee || "—")}</b> · ${esc(item.category)} · ${item.dateISO}<br>
+          <span class="sub">${esc(item.description)}${item.employee ? ` — by ${esc(item.employee)}` : ""}</span>
           ${item.receiptUrl ? `<br><a href="${esc(item.receiptUrl)}" target="_blank" rel="noopener">View receipt ↗</a>`
                             : item.receipt ? `<br><span class="sub">Receipt: ${esc(item.receipt)}</span>` : ""}
         </div>

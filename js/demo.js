@@ -21,17 +21,16 @@ const PEOPLE = [
   ["Tom", "tom@arqusaerospace.com"],
 ];
 
-const DESCRIPTIONS = {
-  Travel: ["Train to Schiphol", "Flight BRU–TLS", "Taxi to supplier", "Parking airport"],
-  Meals: ["Lunch with client", "Team dinner", "Coffee meeting"],
-  Accommodation: ["Hotel Toulouse 2 nights", "Hotel Bremen"],
-  "Office supplies": ["Printer paper + toner", "Whiteboard markers"],
-  "Software & subscriptions": ["Figma seats", "CAD license renewal", "GitHub Team"],
-  Equipment: ["USB-C dock", "Test bench PSU", "Torque wrench set"],
-  "Fuel & mileage": ["Fuel company van", "Mileage claim March"],
-  Training: ["EASA Part-21 course", "Welding cert renewal"],
-  "Client entertainment": ["Airshow tickets", "Client dinner Paris"],
-  Other: ["Customs handling fee", "Notary copy"],
+// [vendor, description, bigTicket] per category
+const SAMPLES = {
+  "Travel Expenses": [["Deutsche Bahn", "Train to trade fair", true], ["Booking.com", "Hotel 2 nights", true], ["Taxi Dresden", "Taxi to supplier", false]],
+  Hardware: [["Bambulab", "PLA & nozzles", false], ["Vevor", "Workshop tooling", true], ["Elegoo", "Filament restock", false]],
+  "Software/SaaS": [["Anthropic", "Claude subscription", false], ["GitHub", "Team seats", false], ["Autodesk", "CAD license", true]],
+  Infrastructure: [["Amazon", "Workbench & storage", true], ["Hornbach", "Workshop shelving", false]],
+  "Office & Team": [["Lidl", "Team dinner groceries", false], ["HIT", "Drinks company dinner", false]],
+  "Marketing/Sales": [["Copy Planet Dresden", "Business cards", false], ["Gerstäcker", "Print materials", false]],
+  "Legal & Notary": [["Engel und Hain GbR", "Legal advisory", true]],
+  Miscellaneous: [["bavAIRia e.V.", "Membership fee", true]],
 };
 
 export function demoExpenses(today = new Date()) {
@@ -48,11 +47,12 @@ export function demoExpenses(today = new Date()) {
       const day = 1 + Math.floor(rand() * 27);
       const date = new Date(base.getFullYear(), base.getMonth(), day);
       if (date > today) continue;
-      const big = cat === "Accommodation" || cat === "Travel" || cat === "Equipment";
+      const [vendor, desc, big] = SAMPLES[cat][Math.floor(rand() * SAMPLES[cat].length)];
       const amount = Math.round((big ? 120 + rand() * 700 : 8 + rand() * 190) * 100) / 100;
+      const vatRate = CONFIG.vatByCategory[cat] ?? (cat === "Miscellaneous" ? 0 : 0.19);
+      const vat = Math.round((amount - amount / (1 + vatRate)) * 100) / 100;
       const recent = m === 0 && day > today.getDate() - 12;
       const status = recent && rand() < 0.55 ? "Pending" : rand() < 0.06 ? "Rejected" : "Approved";
-      const descs = DESCRIPTIONS[cat];
       out.push({
         rowIndex: n,
         id: `EXP-DEMO${String(++n).padStart(3, "0")}`,
@@ -60,11 +60,15 @@ export function demoExpenses(today = new Date()) {
         dateISO: date.toISOString().slice(0, 10),
         employee,
         email,
+        vendor,
         category: cat,
-        description: descs[Math.floor(rand() * descs.length)],
+        description: desc,
         amount,
+        vatRate,
+        vat,
+        net: Math.round((amount - vat) * 100) / 100,
         currency: "EUR",
-        payment: CONFIG.paymentMethods[Math.floor(rand() * CONFIG.paymentMethods.length)],
+        payment: CONFIG.paymentMethods[Math.floor(rand() * 2)],
         receipt: "receipt.jpg",
         receiptUrl: "",
         status,

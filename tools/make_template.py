@@ -1,31 +1,65 @@
 """Generate the expense-tracker.xlsx template embedded in the web app.
 
 Sheets:
-  - Data:      header row for the expense table (the app creates the Excel
-               table over it via Microsoft Graph on first run)
+  - Data:      the "Expenses" table (created here so it ships pre-seeded with
+               the imported June/July 2026 expenses; Graph appends to it)
   - Dashboard: live formulas (month total, averages, YTD, pending count),
                a rolling 12-month totals block, a per-category block, and
                native Excel charts wired to those blocks.
+
+Writes tools/expense-tracker.xlsx (preview) and js/xlsx-template.js (embedded
+base64). Keep COLUMNS in js/config.js in sync with HEADERS below.
 """
 import base64
+import os
+from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, BarChart, Reference
 from openpyxl.formatting.rule import CellIsRule
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
-HEADERS = ["ID", "Submitted", "Date", "Employee", "Email", "Category",
-           "Description", "Amount", "Currency", "Payment", "ReceiptFile",
-           "Status", "DecidedBy", "DecidedOn"]
-WIDTHS = [14, 20, 12, 20, 28, 22, 40, 12, 10, 22, 34, 12, 20, 20]
+#            A     B            C       D           E        F         G           H              I        J          K      L      M           N          O              P         Q            R
+HEADERS = ["ID", "Submitted", "Date", "Employee", "Email", "Vendor", "Category", "Description", "Gross", "VAT %", "VAT", "Net", "Currency", "Payment", "ReceiptFile", "Status", "DecidedBy", "DecidedOn"]
+WIDTHS = [10, 18, 12, 18, 26, 30, 18, 40, 11, 8, 10, 11, 10, 22, 30, 12, 16, 18]
 
-CATEGORIES = ["Travel", "Meals", "Accommodation", "Office supplies",
-              "Software & subscriptions", "Equipment", "Fuel & mileage",
-              "Training", "Client entertainment", "Other"]
+CATEGORIES = ["Travel Expenses", "Hardware", "Software/SaaS", "Infrastructure",
+              "Office & Team", "Marketing/Sales", "Legal & Notary", "Miscellaneous"]
 
 INK = "0B0B0B"
 HEAD_FILL = "1F3A5F"      # deep blue header
 ACCENT = "2A78D6"
+
+EPOCH = datetime(1899, 12, 30)
+def serial(y, m, d):
+    return (datetime(y, m, d) - EPOCH).days
+
+# Imported expenses (June/July 2026). "Ready for Accountant" -> Approved,
+# no status yet -> Pending (approve in the app). VAT for the HIT receipt was
+# blank in the source; inferred at 19% (beverages).
+# (id, date(y,m,d), vendor, category, description, gross, vat_rate, payment, receipt_on_file, status)
+CCC, BT = "Company Credit Card", "Bank Transfer"
+SEED = [
+    ("RE-001", (2026, 6, 1),  "Engel und Hain GbR", "Legal & Notary", "Pre-Seed legal advisory", 616.64, 0.19, BT, True, "Approved"),
+    ("RE-002", (2026, 6, 1),  "Engel und Hain GbR", "Legal & Notary", "Notary cost estimation", 195.61, 0.19, BT, True, "Approved"),
+    ("RE-003", (2026, 6, 20), "Gerstäcker Dresden GmbH & Co. KG", "Marketing/Sales", "Paper for business cards", 27.60, 0.19, CCC, True, "Approved"),
+    ("RE-004", (2026, 6, 22), "Daniel Franz Copy Planet Dresden", "Marketing/Sales", "Printing of business cards", 80.00, 0.19, CCC, True, "Approved"),
+    ("RE-005", (2026, 6, 25), "bavAIRia e.V.", "Miscellaneous", "Membership fee 2026", 225.00, 0.0, BT, False, "Approved"),
+    ("RE-006", (2026, 6, 28), "Amazon", "Infrastructure", "Workbench & Storage", 187.96, 0.19, CCC, True, "Pending"),
+    ("RE-007", (2026, 6, 29), "Elegoo", "Hardware", "PAHT-CF filament", 72.98, 0.19, CCC, True, "Pending"),
+    ("RE-008", (2026, 6, 29), "Bambulab", "Hardware", "PLA & nozzles", 175.83, 0.19, CCC, True, "Pending"),
+    ("RE-009", (2026, 6, 29), "Vevor", "Hardware", "Fume extractor soldering", 104.90, 0.19, CCC, True, "Pending"),
+    ("RE-010", (2026, 6, 30), "Anthropic", "Software/SaaS", "", 75.11, 0.19, CCC, True, "Pending"),
+    ("RE-011", (2026, 7, 1),  "HIT", "Office & Team", "Drinks company dinner", 12.61, 0.19, CCC, True, "Approved"),
+    ("RE-012", (2026, 7, 1),  "Lidl", "Office & Team", "Dinner company dinner", 45.72, 0.19, CCC, True, "Approved"),
+    ("RE-013", (2026, 7, 6),  "Deutsche Bahn", "Travel Expenses", "Travel Berlin Defence Tech Week", 199.00, 0.07, CCC, True, "Approved"),
+    ("RE-014", (2026, 7, 6),  "Deutsche Bahn", "Travel Expenses", "Travel Berlin Defence Tech Week", 67.49, 0.07, CCC, True, "Approved"),
+    ("RE-015", (2026, 7, 6),  "Booking.com", "Travel Expenses", "Travel Berlin Defence Tech Week", 144.00, 0.0, CCC, False, "Pending"),
+    ("RE-016", (2026, 7, 6),  "Counter UAS Forum", "Travel Expenses", "Berlin Defence Tech Week", 250.00, 0.0, CCC, False, "Pending"),
+    ("RE-017", (2026, 7, 6),  "Reimbursement Flight Employment interview", "Travel Expenses", "Cyril Austria flights", 285.00, 0.07, BT, True, "Approved"),
+    ("RE-018", (2026, 7, 6),  "Max Emanuel Brauerei", "Office & Team", "Dinner minus 150 EUR Voucher", 20.00, 0.19, CCC, True, "Approved"),
+]
 
 wb = Workbook()
 
@@ -48,14 +82,32 @@ ws.freeze_panes = "A2"
 for r in range(2, 2002):
     ws.cell(row=r, column=2).number_format = 'yyyy-mm-dd hh:mm'  # Submitted
     ws.cell(row=r, column=3).number_format = 'yyyy-mm-dd'        # Date
-    ws.cell(row=r, column=8).number_format = '#,##0.00'          # Amount
-    ws.cell(row=r, column=14).number_format = 'yyyy-mm-dd hh:mm' # DecidedOn
+    for col in (9, 11, 12):                                      # Gross, VAT, Net
+        ws.cell(row=r, column=col).number_format = '#,##0.00'
+    ws.cell(row=r, column=10).number_format = '0%'               # VAT %
+    ws.cell(row=r, column=18).number_format = 'yyyy-mm-dd hh:mm' # DecidedOn
+
+# Seed rows
+for i, (rid, (y, m, d), vendor, cat, desc, gross, rate, pay, onfile, status) in enumerate(SEED):
+    r = 2 + i
+    vat = round(gross - gross / (1 + rate), 2)
+    row = [rid, serial(y, m, d), serial(y, m, d), "", "", vendor, cat, desc,
+           gross, rate, vat, round(gross - vat, 2), "EUR", pay,
+           "on file" if onfile else "", status, "", ""]
+    for c, v in enumerate(row, start=1):
+        ws.cell(row=r, column=c, value=v)
+
+# The Excel table the app appends to (header + seeded rows).
+last_col = get_column_letter(len(HEADERS))
+table = Table(displayName="Expenses", ref=f"A1:{last_col}{1 + len(SEED)}")
+table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+ws.add_table(table)
 
 # Status conditional formatting
 ok = PatternFill("solid", fgColor="D9F2D9")
 warn = PatternFill("solid", fgColor="FFF3CC")
 bad = PatternFill("solid", fgColor="F8D7D7")
-rng = "L2:L2001"
+rng = "P2:P2001"
 ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Approved"'], fill=ok))
 ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Pending"'], fill=warn))
 ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Rejected"'], fill=bad))
@@ -79,16 +131,17 @@ db["B2"].font = title_font
 db["B3"] = "Live view — recalculates whenever the app adds or approves an expense."
 db["B3"].font = Font(size=9, color="898781")
 
-# Amount col H, Date col C, Status col L, Category col F on Data sheet.
+# Data columns: Date = C, Gross = I, VAT = K, Category = G, Status = P.
 # "Counted" spend = everything that is not Rejected.
-NOT_REJ = 'Data!$L:$L,"<>Rejected"'
+NOT_REJ = 'Data!$P:$P,"<>Rejected"'
 
 kpis = [
-    ("This month", f'=SUMIFS(Data!$H:$H,Data!$C:$C,">="&EOMONTH(TODAY(),-1)+1,Data!$C:$C,"<="&EOMONTH(TODAY(),0),{NOT_REJ})'),
-    ("Last month", f'=SUMIFS(Data!$H:$H,Data!$C:$C,">="&EOMONTH(TODAY(),-2)+1,Data!$C:$C,"<="&EOMONTH(TODAY(),-1),{NOT_REJ})'),
-    ("Average / month (12m)", f'=SUMIFS(Data!$H:$H,Data!$C:$C,">="&EOMONTH(TODAY(),-12)+1,{NOT_REJ})/12'),
-    ("Year to date", f'=SUMIFS(Data!$H:$H,Data!$C:$C,">="&DATE(YEAR(TODAY()),1,1),{NOT_REJ})'),
-    ("Awaiting approval", '=COUNTIF(Data!$L:$L,"Pending")'),
+    ("This month (gross)", f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&EOMONTH(TODAY(),-1)+1,Data!$C:$C,"<="&EOMONTH(TODAY(),0),{NOT_REJ})'),
+    ("Last month", f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&EOMONTH(TODAY(),-2)+1,Data!$C:$C,"<="&EOMONTH(TODAY(),-1),{NOT_REJ})'),
+    ("Average / month (12m)", f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&EOMONTH(TODAY(),-12)+1,{NOT_REJ})/12'),
+    ("Year to date", f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&DATE(YEAR(TODAY()),1,1),{NOT_REJ})'),
+    ("VAT year to date", f'=SUMIFS(Data!$K:$K,Data!$C:$C,">="&DATE(YEAR(TODAY()),1,1),{NOT_REJ})'),
+    ("Awaiting approval", '=COUNTIF(Data!$P:$P,"Pending")'),
 ]
 row = 5
 for label, formula in kpis:
@@ -111,7 +164,7 @@ for i in range(12):
     db[f"K{r}"] = f"=EOMONTH(TODAY(),-{off + 1})+1"
     db[f"K{r}"].number_format = "yyyy-mm-dd"
     db[f"L{r}"] = f'=TEXT(K{r},"mmm yy")'
-    db[f"M{r}"] = (f'=SUMIFS(Data!$H:$H,Data!$C:$C,">="&K{r},'
+    db[f"M{r}"] = (f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&K{r},'
                    f'Data!$C:$C,"<="&EOMONTH(K{r},0),{NOT_REJ})')
     db[f"M{r}"].number_format = '#,##0.00'
 
@@ -121,7 +174,7 @@ db["O1"].font = sect_font; db["P1"].font = sect_font
 for i, cat in enumerate(CATEGORIES):
     r = 2 + i
     db[f"O{r}"] = cat
-    db[f"P{r}"] = (f'=SUMIFS(Data!$H:$H,Data!$F:$F,O{r},'
+    db[f"P{r}"] = (f'=SUMIFS(Data!$I:$I,Data!$G:$G,O{r},'
                    f'Data!$C:$C,">="&EOMONTH(TODAY(),-12)+1,{NOT_REJ})')
     db[f"P{r}"].number_format = '#,##0.00'
 
@@ -142,7 +195,7 @@ s.smooth = False
 s.graphicalProperties.line.solidFill = ACCENT
 s.graphicalProperties.line.width = 20000  # 2pt in EMU-ish units
 line.legend = None
-db.add_chart(line, "B12")
+db.add_chart(line, "B13")
 
 # Bar chart — spend by category
 bar = BarChart()
@@ -158,11 +211,10 @@ bar.set_categories(cats)
 bar.series[0].graphicalProperties.solidFill = ACCENT
 bar.legend = None
 bar.y_axis.majorGridlines = None
-db.add_chart(bar, "B29")
+db.add_chart(bar, "B30")
 
 wb.calculation.fullCalcOnLoad = True
 
-import os
 repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = os.path.join(repo, "tools", "expense-tracker.xlsx")
 wb.save(out)
@@ -171,9 +223,10 @@ with open(out, "rb") as f:
     b64 = base64.b64encode(f.read()).decode()
 
 js = ("// Auto-generated by tools/make_template.py — do NOT edit by hand.\n"
-      "// Base64 of the expense-tracker.xlsx template (Data sheet + live Dashboard\n"
-      "// sheet with formulas and native Excel charts). Uploaded to SharePoint by\n"
-      "// the app on first run if the workbook does not exist yet.\n"
+      "// Base64 of the expense-tracker.xlsx template (Data sheet with the\n"
+      "// pre-seeded \"Expenses\" table + live Dashboard sheet with formulas and\n"
+      "// native Excel charts). Uploaded to SharePoint by the app on first run\n"
+      "// if the workbook does not exist yet.\n"
       "export const XLSX_TEMPLATE_B64 =\n")
 lines = [f'  "{b64[i:i + 100]}"' for i in range(0, len(b64), 100)]
 js += " +\n".join(lines) + ";\n"
@@ -181,4 +234,5 @@ js += " +\n".join(lines) + ";\n"
 with open(os.path.join(repo, "js", "xlsx-template.js"), "w") as f:
     f.write(js)
 
-print("wrote", out, "and js/xlsx-template.js —", len(b64) * 3 // 4, "xlsx bytes")
+print("wrote", out, "and js/xlsx-template.js —", len(b64) * 3 // 4, "xlsx bytes,",
+      len(SEED), "seed rows")

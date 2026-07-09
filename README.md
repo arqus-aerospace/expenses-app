@@ -6,6 +6,12 @@ maintained Excel tracker, and waits for approval by Marnix, Stijn or Anton.
 A built-in dashboard shows monthly spend, averages, spend over time, category
 and per-employee breakdowns.
 
+Before anything is sent, a **review step** shows a summary of what you're about
+to submit (gross/net/VAT, vendor, category, receipt) and counts down for
+10 seconds — plenty of time to hit "Go back & edit" if something is off.
+Amounts are entered gross; the app suggests the VAT rate per category
+(19% / 7% / 0%) and computes VAT and net for the books automatically.
+
 | Dashboard (light / dark) | Phone |
 |---|---|
 | ![Dashboard](docs/dashboard-light.png) | ![Submit on mobile](docs/submit-mobile.png) |
@@ -54,9 +60,14 @@ automatically the first time anyone submits an expense** (a template is
 embedded in the app). It contains:
 
 - **Data** sheet — an Excel table (`Expenses`) the app appends to via the
-  Graph Excel API. Dates are written as real Excel dates, amounts as numbers,
+  Graph Excel API, with per-expense ID, vendor, gross / VAT-rate / VAT / net,
+  payment method and approval status. Dates are written as real Excel dates,
   the receipt cell is a clickable link to the file in SharePoint, and the
-  Status column is color-coded (Pending / Approved / Rejected).
+  Status column is color-coded (Pending / Approved / Rejected). The template
+  ships **pre-seeded with the imported June/July 2026 expenses**
+  (RE-001 … RE-018, €2,785.45 gross / €293.92 VAT) — rows that were
+  "Ready for Accountant" are marked Approved, the rest arrive as Pending so
+  they can be approved in the app.
 - **Dashboard** sheet — live formulas (this month, last month, 12-month
   average, year-to-date, pending count), a rolling 12-month block and a
   per-category block, plus two native Excel charts. It recalculates itself
