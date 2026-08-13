@@ -180,6 +180,15 @@ Regenerate the embedded Excel template after changing columns:
 `pip install openpyxl && python3 tools/make_template.py` — it rewrites
 `js/xlsx-template.js` in place (keep `COLUMNS` in `js/config.js` in sync).
 
+Regression suite — drives the real UI (gate, submit, review/undo, credits and
+their approval, dashboard charts, approvals, employee role) and fails on any
+console error:
+
+```bash
+python3 -m http.server 8123 &
+npm i playwright && node tools/e2e.mjs      # screenshots in .screenshots/
+```
+
 `tools/chart-negatives.html` is a visual harness for the charts' negative-value
 handling (net-credit months, all-negative, zero-crossing line, empty data) —
 open it via the local server after touching `js/charts.js`.
