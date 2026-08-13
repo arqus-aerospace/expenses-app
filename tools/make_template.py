@@ -83,7 +83,8 @@ for r in range(2, 2002):
     ws.cell(row=r, column=2).number_format = 'yyyy-mm-dd hh:mm'  # Submitted
     ws.cell(row=r, column=3).number_format = 'yyyy-mm-dd'        # Date
     for col in (9, 11, 12):                                      # Gross, VAT, Net
-        ws.cell(row=r, column=col).number_format = '#,##0.00'
+        # credits/refunds are entered negative — show them red in the book
+        ws.cell(row=r, column=col).number_format = '#,##0.00;[Red]-#,##0.00'
     ws.cell(row=r, column=10).number_format = '0%'               # VAT %
     ws.cell(row=r, column=18).number_format = 'yyyy-mm-dd hh:mm' # DecidedOn
 
@@ -148,7 +149,7 @@ for label, formula in kpis:
     db.cell(row=row, column=2, value=label).font = kpi_label
     v = db.cell(row=row, column=3, value=formula)
     v.font = kpi_value
-    v.number_format = '#,##0.00' if "COUNTIF" not in formula else '0'
+    v.number_format = '#,##0.00;[Red]-#,##0.00' if "COUNTIF" not in formula else '0'
     v.alignment = Alignment(horizontal="right")
     db.cell(row=row, column=2).border = box
     v.border = box
@@ -166,7 +167,7 @@ for i in range(12):
     db[f"L{r}"] = f'=TEXT(K{r},"mmm yy")'
     db[f"M{r}"] = (f'=SUMIFS(Data!$I:$I,Data!$C:$C,">="&K{r},'
                    f'Data!$C:$C,"<="&EOMONTH(K{r},0),{NOT_REJ})')
-    db[f"M{r}"].number_format = '#,##0.00'
+    db[f"M{r}"].number_format = '#,##0.00;[Red]-#,##0.00'
 
 # Category block (O:P helper area, charted)
 db["O1"] = "Category"; db["P1"] = "Total (12m)"
@@ -176,7 +177,7 @@ for i, cat in enumerate(CATEGORIES):
     db[f"O{r}"] = cat
     db[f"P{r}"] = (f'=SUMIFS(Data!$I:$I,Data!$G:$G,O{r},'
                    f'Data!$C:$C,">="&EOMONTH(TODAY(),-12)+1,{NOT_REJ})')
-    db[f"P{r}"].number_format = '#,##0.00'
+    db[f"P{r}"].number_format = '#,##0.00;[Red]-#,##0.00'
 
 # Line chart — expenses over time (last 12 months)
 line = LineChart()

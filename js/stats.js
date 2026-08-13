@@ -43,7 +43,7 @@ export function computeStats(expenses, today = new Date()) {
 
   const months12 = lastMonths(12, today);
   const monthly = months12.map((k) => byMonth.get(k) || 0);
-  const activeMonths = monthly.filter((v) => v > 0).length || 1;
+  const activeMonths = monthly.filter((v) => v !== 0).length || 1;
 
   const pending = expenses.filter((e) => e.status === "Pending");
 

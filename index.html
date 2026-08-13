@@ -91,10 +91,14 @@
         <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
 
         <form id="expense-form" autocomplete="off">
+          <div class="sign-toggle" role="group" aria-label="Entry type">
+            <button type="button" class="sign-btn active" data-sign="1">Expense</button>
+            <button type="button" class="sign-btn" data-sign="-1">Credit / refund</button>
+          </div>
           <div class="grid2">
             <label>Amount (gross, incl. VAT)
               <div class="amount-row">
-                <input id="f-amount" type="number" step="0.01" min="0.01" required
+                <input id="f-amount" type="number" step="0.01" required
                        inputmode="decimal" placeholder="0.00" />
                 <select id="f-currency" aria-label="Currency"></select>
               </div>

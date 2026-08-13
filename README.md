@@ -12,6 +12,13 @@ to submit (gross/net/VAT, vendor, category, receipt) and counts down for
 Amounts are entered gross; the app suggests the VAT rate per category
 (19% / 7% / 0%) and computes VAT and net for the books automatically.
 
+**Credits and refunds** are entered as negative amounts: flip the
+Expense / Credit toggle, or just type a minus in front of the amount and the
+toggle follows. VAT is reversed with the same sign, the row lands negative in
+Excel (shown red there, green in the app), and every total, average and chart
+nets them off — a month or category that goes negative renders below the
+zero line rather than breaking the scale.
+
 | Dashboard (light / dark) | Phone |
 |---|---|
 | ![Dashboard](docs/dashboard-light.png) | ![Submit on mobile](docs/submit-mobile.png) |
@@ -172,6 +179,10 @@ exercises every screen with deterministic sample data.
 Regenerate the embedded Excel template after changing columns:
 `pip install openpyxl && python3 tools/make_template.py` — it rewrites
 `js/xlsx-template.js` in place (keep `COLUMNS` in `js/config.js` in sync).
+
+`tools/chart-negatives.html` is a visual harness for the charts' negative-value
+handling (net-credit months, all-negative, zero-crossing line, empty data) —
+open it via the local server after touching `js/charts.js`.
 
 Layout: `js/app.js` (UI + flow) · `js/graph.js` (SharePoint/Excel via Graph)
 · `js/auth.js` (MSAL) · `js/charts.js` (dependency-free SVG charts) ·

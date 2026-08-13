@@ -41,16 +41,23 @@ export function hideTip() {
 
 // --------------------------------------------------------------- scales ----
 
-// Clean axis scale: pick a step from {1, 2, 2.5, 5}×10^k so every gridline
-// lands on a round number, then take the smallest multiple that covers v.
-function niceScale(v) {
-  if (v <= 0) return { max: 4, step: 1 };
-  const pow = 10 ** Math.floor(Math.log10(v));
+// Clean axis scale over a value range that may include negatives (credits and
+// refunds). Steps come from {1, 2, 2.5, 5}×10^k so every gridline lands on a
+// round number; the domain always includes zero so the baseline is meaningful.
+function niceDomain(values) {
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
+  if (lo === 0 && hi === 0) return { min: 0, max: 4, step: 1 }; // nothing to plot yet
+  const span = hi - lo;
+  const pow = 10 ** Math.floor(Math.log10(span));
+  let step = 10 * pow;
   for (const m of [0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10]) {
-    const step = m * pow;
-    if (step * 5 >= v) return { step, max: Math.ceil(v / step - 1e-9) * step };
+    if (m * pow * 5 >= span) { step = m * pow; break; }
   }
-  return { step: 10 * pow, max: 10 * pow };
+  const min = Math.floor(lo / step + 1e-9) * step;
+  let max = Math.ceil(hi / step - 1e-9) * step;
+  if (max <= min) max = min + step;
+  return { min, max, step };
 }
 
 function frame(container, height) {
@@ -66,36 +73,45 @@ function frame(container, height) {
   return { svg, width };
 }
 
-function yAxis(svg, { left, right, top, bottom, height, width, max, step, fmt }) {
+// Draws gridlines + tick labels across the domain and returns the value→y
+// scale. The zero line gets the axis treatment wherever it falls, so negative
+// marks hang below it.
+function yAxis(svg, { left, right, top, bottom, height, width, min, max, step, fmt }) {
   const plotH = height - top - bottom;
-  const ticks = Math.round(max / step);
+  const y = (v) => height - bottom - ((v - min) / (max - min)) * plotH;
+  const ticks = Math.max(1, Math.round((max - min) / step));
   for (let i = 0; i <= ticks; i++) {
-    const val = step * i;
-    const y = height - bottom - (plotH * i) / ticks;
-    if (i > 0)
+    const val = min + step * i;
+    const yy = y(val);
+    if (Math.abs(val) > 1e-9)
       el("line", {
-        x1: left, x2: width - right, y1: y, y2: y,
+        x1: left, x2: width - right, y1: yy, y2: yy,
         class: "grid",
       }, svg);
     el("text", {
-      x: left - 6, y: y + 3.5, "text-anchor": "end", class: "tick",
+      x: left - 6, y: yy + 3.5, "text-anchor": "end", class: "tick",
     }, svg).textContent = fmt(val);
   }
+  const zeroY = y(0);
   el("line", {
-    x1: left, x2: width - right,
-    y1: height - bottom, y2: height - bottom,
-    class: "axis",
+    x1: left, x2: width - right, y1: zeroY, y2: zeroY, class: "axis",
   }, svg);
-  return { plotH };
+  return { plotH, y, zeroY };
 }
 
-// Bar path: 4px rounded top corners, square at the baseline.
-function barPath(x, y, w, h, r = 4) {
-  if (h <= 0) return "";
-  const rr = Math.min(r, w / 2, h);
-  return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y}
-          L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr}
-          L${x + w},${y + h} Z`;
+// Bar path: 4px rounded data-end, square where it meets the baseline. Bars
+// below zero are rounded on their bottom edge instead.
+function barPath(x, y, w, h, roundTop = true) {
+  if (h <= 0.5) return `M${x},${y} L${x + w},${y} L${x + w},${y + 1} L${x},${y + 1} Z`;
+  const rr = Math.min(4, w / 2, h);
+  if (roundTop) {
+    return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y}
+            L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr}
+            L${x + w},${y + h} Z`;
+  }
+  return `M${x},${y} L${x},${y + h - rr} Q${x},${y + h} ${x + rr},${y + h}
+          L${x + w - rr},${y + h} Q${x + w},${y + h} ${x + w},${y + h - rr}
+          L${x + w},${y} Z`;
 }
 
 // -------------------------------------------------------- column chart ----
@@ -104,26 +120,40 @@ export function columnChart(container, { labels, values, fmt, fmtAxis, tipLabel 
   const height = 240;
   const { svg, width } = frame(container, height);
   const left = 46, right = 10, top = 18, bottom = 26;
-  const { max, step } = niceScale(Math.max(...values, 1));
-  const { plotH } = yAxis(svg, { left, right, top, bottom, height, width, max, step, fmt: fmtAxis });
+  const { min, max, step } = niceDomain(values);
+  const { plotH, y: yv, zeroY } = yAxis(svg, {
+    left, right, top, bottom, height, width, min, max, step, fmt: fmtAxis,
+  });
 
   const n = labels.length;
   const band = (width - left - right) / n;
   const barW = Math.min(24, Math.max(6, band * 0.55));
   const maxIdx = values.indexOf(Math.max(...values));
+  const minIdx = values.indexOf(Math.min(...values));
   const labelEvery = band < 34 ? 2 : 1;
 
   labels.forEach((lab, i) => {
-    const h = (values[i] / max) * plotH;
+    const v = values[i];
+    const up = v >= 0;
+    const vy = yv(v);
+    const yTop = Math.min(vy, zeroY);
+    const h = Math.abs(vy - zeroY);
     const x = left + band * i + (band - barW) / 2;
-    const y = height - bottom - h;
-    el("path", { d: barPath(x, y, barW, h), class: "bar", "data-i": i }, svg);
+    el("path", {
+      d: barPath(x, yTop, barW, h, up),
+      class: `bar${up ? "" : " neg"}`,
+      "data-i": i,
+    }, svg);
 
-    // direct label on the tallest column only; ticks carry the rest
-    if (i === maxIdx && values[i] > 0) {
+    // Direct labels on the extremes only; ticks carry the rest. A label under
+    // a credit bar is dropped when it would land on the month labels — the
+    // axis ticks and tooltip still carry the value.
+    const labelY = up ? vy - 6 : vy + 14;
+    const fits = up || labelY <= height - bottom - 4;
+    if (((i === maxIdx && v > 0) || (i === minIdx && v < 0)) && fits) {
       el("text", {
-        x: x + barW / 2, y: y - 6, "text-anchor": "middle", class: "val",
-      }, svg).textContent = fmt(values[i]);
+        x: x + barW / 2, y: labelY, "text-anchor": "middle", class: "val",
+      }, svg).textContent = fmt(v);
     }
     if (i % labelEvery === 0) {
       el("text", {
@@ -162,16 +192,17 @@ export function lineChart(container, { labels, values, fmt, fmtEnd, fmtAxis, fmt
   const height = 240;
   const { svg, width } = frame(container, height);
   const left = 46, right = 62, top = 18, bottom = 26;
-  const { max, step } = niceScale(Math.max(...values, 1));
-  const { plotH } = yAxis(svg, { left, right, top, bottom, height, width, max, step, fmt: fmtAxis });
+  const { min, max, step } = niceDomain(values);
+  const { plotH, y: py, zeroY } = yAxis(svg, {
+    left, right, top, bottom, height, width, min, max, step, fmt: fmtAxis,
+  });
 
   const n = values.length;
   const px = (i) => left + ((width - left - right) * i) / Math.max(1, n - 1);
-  const py = (v) => height - bottom - (v / max) * plotH;
 
   const pts = values.map((v, i) => `${px(i)},${py(v)}`);
   el("path", {
-    d: `M${pts.join(" L")} L${px(n - 1)},${height - bottom} L${px(0)},${height - bottom} Z`,
+    d: `M${pts.join(" L")} L${px(n - 1)},${zeroY} L${px(0)},${zeroY} Z`,
     class: "area",
   }, svg);
   el("path", { d: `M${pts.join(" L")}`, class: "line" }, svg);
@@ -221,28 +252,50 @@ export function lineChart(container, { labels, values, fmt, fmtEnd, fmtAxis, fmt
 // ----------------------------------------------- horizontal bar chart ----
 
 export function hbarChart(container, { items, fmt, colorFor }) {
-  const rowH = 30, labelW = 132, valueW = 76;
+  const rowH = 30, labelW = 132;
   const height = items.length * rowH + 6;
   const { svg, width } = frame(container, height);
-  const max = Math.max(...items.map((it) => it.value), 1);
+  const values = items.map((it) => it.value);
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
+  const span = hi - lo || 1;
+  const hasNeg = lo < 0;
+  // credits need a wider value column (minus sign) and it is right-aligned,
+  // so long amounts can never be clipped at the edge
+  const valueW = hasNeg ? 96 : 76;
+  const x0 = labelW + 10;
   const plotW = width - labelW - valueW - 10;
+  const x = (v) => x0 + ((v - lo) / span) * plotW;
+  const zeroX = x(0);
 
   items.forEach((it, i) => {
     const y = i * rowH + 6;
-    const w = Math.max(2, (it.value / max) * plotW);
+    const up = it.value >= 0;
+    const vx = x(it.value);
+    const barL = Math.min(vx, zeroX);
+    const w = Math.max(2, Math.abs(vx - zeroX));
     el("text", {
       x: labelW, y: y + 12, "text-anchor": "end", class: "cat-label",
     }, svg).textContent = it.label.length > 20 ? it.label.slice(0, 19) + "…" : it.label;
 
-    // rounded right data-end, square at the left baseline
+    // rounded data-end (right for positive, left for a credit), square at zero
+    const r = 4;
     const bar = el("path", {
-      d: `M${labelW + 10},${y} L${labelW + 10 + w - 4},${y} Q${labelW + 10 + w},${y} ${labelW + 10 + w},${y + 4}
-          L${labelW + 10 + w},${y + 12} Q${labelW + 10 + w},${y + 16} ${labelW + 10 + w - 4},${y + 16}
-          L${labelW + 10},${y + 16} Z`,
-      fill: colorFor ? colorFor(it.label, i) : "var(--series-1)",
+      d: up
+        ? `M${barL},${y} L${barL + w - r},${y} Q${barL + w},${y} ${barL + w},${y + r}
+           L${barL + w},${y + 12} Q${barL + w},${y + 16} ${barL + w - r},${y + 16}
+           L${barL},${y + 16} Z`
+        : `M${barL + w},${y} L${barL + r},${y} Q${barL},${y} ${barL},${y + r}
+           L${barL},${y + 12} Q${barL},${y + 16} ${barL + r},${y + 16}
+           L${barL + w},${y + 16} Z`,
+      fill: up ? (colorFor ? colorFor(it.label, i) : "var(--series-1)") : "var(--good)",
     }, svg);
+    // With credits in play the bars start at different x, so values get their
+    // own right-hand column instead of trailing each bar end.
     el("text", {
-      x: labelW + 10 + w + 8, y: y + 12, class: "val",
+      x: hasNeg ? width - 2 : barL + w + 8,
+      y: y + 12, class: "val",
+      ...(hasNeg ? { "text-anchor": "end" } : {}),
     }, svg).textContent = fmt(it.value);
 
     const hit = el("rect", {
@@ -256,7 +309,7 @@ export function hbarChart(container, { items, fmt, colorFor }) {
     bar.style.pointerEvents = "none";
   });
   el("line", {
-    x1: labelW + 10, x2: labelW + 10, y1: 0, y2: height, class: "axis",
+    x1: zeroX, x2: zeroX, y1: 0, y2: height, class: "axis",
   }, svg);
 }
 
@@ -267,9 +320,10 @@ export function sparkline(container, values) {
   const w = 96, h = 28;
   const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h, "aria-hidden": "true" });
   container.appendChild(svg);
-  const max = Math.max(...values, 1);
+  const lo = Math.min(0, ...values);
+  const span = Math.max(...values, 0) - lo || 1;
   const px = (i) => 2 + ((w - 8) * i) / Math.max(1, values.length - 1);
-  const py = (v) => h - 3 - (v / max) * (h - 8);
+  const py = (v) => h - 3 - ((v - lo) / span) * (h - 8);
   const pts = values.map((v, i) => `${px(i)},${py(v)}`).join(" L");
   el("path", { d: `M${pts}`, class: "spark" }, svg);
   el("circle", {

@@ -215,6 +215,18 @@ function wireSubmit() {
     $("f-vat").addEventListener(ev, updateVatHint);
   });
 
+  // Expense / credit toggle. Typing a minus into the amount also flips it, so
+  // "-150" works as well as pressing the button.
+  document.querySelectorAll(".sign-btn").forEach((b) =>
+    b.addEventListener("click", () => setSign(Number(b.dataset.sign))));
+  $("f-amount").addEventListener("input", () => {
+    const v = parseFloat($("f-amount").value);
+    if (v < 0) {
+      setSign(-1);
+      $("f-amount").value = String(Math.abs(v));
+    }
+  });
+
   $("expense-form").addEventListener("submit", onSubmit);
   $("review-cancel").addEventListener("click", cancelReview);
   $("review-send").addEventListener("click", () => finishReview(true));
@@ -241,8 +253,19 @@ function fillVatSelect(selected) {
   updateVatHint();
 }
 
+// +1 = normal expense, -1 = credit/refund (money coming back).
+let entrySign = 1;
+
+function setSign(sign) {
+  entrySign = sign;
+  document.querySelectorAll(".sign-btn").forEach((b) =>
+    b.classList.toggle("active", Number(b.dataset.sign) === sign));
+  updateVatHint();
+}
+
 function vatBreakdown() {
-  const gross = Math.round(parseFloat($("f-amount").value || "0") * 100) / 100;
+  const typed = Math.abs(parseFloat($("f-amount").value || "0"));
+  const gross = Math.round(typed * entrySign * 100) / 100;
   const rate = Number($("f-vat").value) || 0;
   const vat = Math.round((gross - gross / (1 + rate)) * 100) / 100;
   return { gross, rate, vat, net: Math.round((gross - vat) * 100) / 100 };
@@ -250,8 +273,9 @@ function vatBreakdown() {
 
 function updateVatHint() {
   const { gross, rate, vat, net } = vatBreakdown();
+  const cur = $("f-currency").value;
   $("vat-hint").textContent = gross
-    ? `Net ${fmtMoney(net, $("f-currency").value)} + ${Math.round(rate * 100)}% VAT ${fmtMoney(vat, $("f-currency").value)}`
+    ? `${gross < 0 ? "Credit: " : ""}Net ${fmtMoney(net, cur)} + ${Math.round(rate * 100)}% VAT ${fmtMoney(vat, cur)}`
     : "";
 }
 
@@ -273,8 +297,9 @@ let reviewTimer = null;
 
 function onSubmit(e) {
   e.preventDefault();
-  if (!pendingFile && !confirm("No receipt attached — submit without one?")) return;
   const { gross, rate, vat, net } = vatBreakdown();
+  if (!gross) { toast("Enter an amount greater than zero."); return; }
+  if (!pendingFile && !confirm("No receipt attached — submit without one?")) return;
   reviewExp = {
     id: `EXP-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
     dateISO: $("f-date").value,
@@ -295,7 +320,9 @@ function onSubmit(e) {
 
 function showReview(exp) {
   const cur = exp.currency;
+  const credit = exp.amount < 0;
   const rows = [
+    ...(credit ? [["Type", "Credit / refund — money coming back"]] : []),
     ["Amount", `${fmtMoney(exp.amount, cur)} gross — ${fmtMoney(exp.net, cur)} net + ${Math.round(exp.vatRate * 100)}% VAT (${fmtMoney(exp.vat, cur)})`],
     ["Vendor", exp.vendor],
     ["Category", exp.category],
@@ -360,6 +387,7 @@ async function finishReview(manual) {
     $("f-date").value = new Date().toISOString().slice(0, 10);
     fillSelect($("f-currency"), CONFIG.currencies, CONFIG.defaultCurrency);
     suggestVat();
+    setSign(1);
     clearFile();
     updateApprovalsBadge();
   } catch (err) {
@@ -408,8 +436,11 @@ async function renderDashboard() {
   const rangeStats = computeStats(inRange, today);
   const cur = CONFIG.defaultCurrency;
   const money = (v) => fmtMoney(v, cur);
-  const compact = (v) =>
-    v >= 1000 ? `${Math.round(v / 100) / 10}k` : String(Math.round(v));
+  const compact = (v) => {
+    const a = Math.abs(v);
+    const s = v < 0 ? "-" : "";
+    return a >= 1000 ? `${s}${Math.round(a / 100) / 10}k` : `${s}${Math.round(a)}`;
+  };
 
   // KPI tiles (fixed definitions, independent of the range filter)
   $("kpi-month").textContent = money(stats.thisMonth);
@@ -492,7 +523,7 @@ async function renderDashboard() {
         <td>${esc(x.vendor || x.employee || "—")}</td>
         <td>${esc(x.category)}</td>
         <td class="desc-cell">${esc(x.description)}</td>
-        <td class="num">${fmtMoney(x.amount, x.currency)}</td>
+        <td class="num${x.amount < 0 ? " credit" : ""}">${fmtMoney(x.amount, x.currency)}</td>
         <td class="num">${x.vat ? fmtMoney(x.vat, x.currency) : "—"}</td>
         <td><span class="status-pill ${x.status.toLowerCase()}">${x.status}</span></td>`;
       tbody.appendChild(tr);
@@ -540,7 +571,7 @@ async function renderMine() {
       <td>${esc(x.vendor || "—")}</td>
       <td>${esc(x.category)}</td>
       <td class="desc-cell">${esc(x.description)}</td>
-      <td class="num">${fmtMoney(x.amount, x.currency)}</td>
+      <td class="num${x.amount < 0 ? " credit" : ""}">${fmtMoney(x.amount, x.currency)}</td>
       <td class="num">${x.vat ? fmtMoney(x.vat, x.currency) : "—"}</td>
       <td><span class="status-pill ${x.status.toLowerCase()}">${x.status}</span></td>
       <td>${x.receiptUrl
@@ -588,7 +619,7 @@ async function renderApprovals() {
     card.className = "card approval-card";
     card.innerHTML = `
       <div class="appr-main">
-        <div class="appr-amount">${fmtMoney(item.amount, item.currency)}</div>
+        <div class="appr-amount${item.amount < 0 ? " credit" : ""}">${fmtMoney(item.amount, item.currency)}</div>
         <div class="appr-meta">
           <b>${esc(item.vendor || item.employee || "—")}</b> · ${esc(item.category)} · ${item.dateISO}<br>
           <span class="sub">${esc(item.description)}${item.employee ? ` — by ${esc(item.employee)}` : ""}</span>

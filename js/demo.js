@@ -48,7 +48,10 @@ export function demoExpenses(today = new Date()) {
       const date = new Date(base.getFullYear(), base.getMonth(), day);
       if (date > today) continue;
       const [vendor, desc, big] = SAMPLES[cat][Math.floor(rand() * SAMPLES[cat].length)];
-      const amount = Math.round((big ? 120 + rand() * 700 : 8 + rand() * 190) * 100) / 100;
+      // roughly one in twelve entries is a credit (refund / returned goods)
+      const credit = rand() < 0.08;
+      const amount = Math.round((big ? 120 + rand() * 700 : 8 + rand() * 190) * 100) /
+        100 * (credit ? -1 : 1);
       const vatRate = CONFIG.vatByCategory[cat] ?? (cat === "Miscellaneous" ? 0 : 0.19);
       const vat = Math.round((amount - amount / (1 + vatRate)) * 100) / 100;
       const recent = m === 0 && day > today.getDate() - 12;
@@ -62,7 +65,7 @@ export function demoExpenses(today = new Date()) {
         email,
         vendor,
         category: cat,
-        description: desc,
+        description: credit ? `Refund — ${desc.toLowerCase()}` : desc,
         amount,
         vatRate,
         vat,

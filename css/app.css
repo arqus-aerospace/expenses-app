@@ -183,6 +183,23 @@ input:focus, select:focus { outline: 2px solid var(--series-1); border-color: tr
 .status { color: var(--text-2); font-size: 13.5px; text-align: center; }
 .vat-hint { margin: 6px 0 0; min-height: 18px; }
 
+/* expense vs credit toggle */
+.sign-toggle {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 4px; margin-top: 16px; border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.sign-btn {
+  font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  padding: 8px 10px; border: none; border-radius: 9px;
+  background: transparent; color: var(--text-2);
+}
+.sign-btn.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.sign-btn[data-sign="-1"].active { color: var(--good-text); }
+
+/* money coming back reads green wherever it appears */
+.credit { color: var(--good-text); }
+
 /* review-before-send */
 .review-list { margin: 14px 0; padding: 0; }
 .review-list div {
@@ -247,6 +264,7 @@ input:focus, select:focus { outline: 2px solid var(--series-1); border-color: tr
 
 /* chart marks (SVG) */
 .bar { fill: var(--series-1); transition: opacity 0.12s; }
+.bar.neg { fill: var(--good); }   /* net credit month — money came back */
 .bar.dim { opacity: 0.45; }
 .line { fill: none; stroke: var(--series-1); stroke-width: 2;
         stroke-linejoin: round; stroke-linecap: round; }

@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- Visual harness for the charts' negative-value handling (credits/refunds).
+     Open tools/chart-negatives.html with the app served locally. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Chart negatives harness</title>
+  <link rel="stylesheet" href="../css/app.css" />
+  <style>
+    body { padding: 20px; }
+    .chart-card { margin-bottom: 16px; max-width: 760px; }
+  </style>
+</head>
+<body>
+  <div class="card chart-card"><h3>Columns: months incl. two net-credit months</h3>
+    <div id="c1" class="chart"></div></div>
+  <div class="card chart-card"><h3>Columns: all negative</h3>
+    <div id="c2" class="chart"></div></div>
+  <div class="card chart-card"><h3>Line: cumulative dipping below zero</h3>
+    <div id="c3" class="chart"></div></div>
+  <div class="card chart-card"><h3>Bars: categories with two net credits</h3>
+    <div id="c4" class="chart"></div></div>
+  <div class="card chart-card"><h3>Edge: all zero</h3>
+    <div id="c5" class="chart"></div></div>
+
+  <script type="module">
+    import { columnChart, lineChart, hbarChart } from "../js/charts.js";
+    const money = (v) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(v);
+    const compact = (v) => {
+      const a = Math.abs(v), s = v < 0 ? "-" : "";
+      return a >= 1000 ? `${s}${Math.round(a / 100) / 10}k` : `${s}${Math.round(a)}`;
+    };
+    const months = ["Sep", "Oct", "Nov", "Dec", "Jan", "Feb"];
+
+    columnChart(document.getElementById("c1"), {
+      labels: months, values: [1200, -450, 800, 2400, -1300, 600], fmt: money, fmtAxis: compact,
+    });
+    columnChart(document.getElementById("c2"), {
+      labels: months, values: [-120, -450, -80, -240, -130, -600], fmt: money, fmtAxis: compact,
+    });
+    lineChart(document.getElementById("c3"), {
+      labels: months, values: [300, -200, -650, -100, 400, 900], fmt: money, fmtAxis: compact,
+    });
+    hbarChart(document.getElementById("c4"), {
+      items: [
+        { label: "Travel Expenses", value: 4200 },
+        { label: "Hardware", value: 1800 },
+        { label: "Office & Team", value: 240 },
+        { label: "Marketing/Sales", value: -320 },
+        { label: "Miscellaneous", value: -1500 },
+      ], fmt: money,
+    });
+    columnChart(document.getElementById("c5"), {
+      labels: months, values: [0, 0, 0, 0, 0, 0], fmt: money, fmtAxis: compact,
+    });
+    window.__ready = true;
+  </script>
+</body>
+</html>
