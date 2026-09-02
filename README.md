@@ -84,21 +84,31 @@ Because it's a plain Excel file in SharePoint you keep full ownership: open
 it in Excel/Teams, add sheets, pivot it, feed Power BI from it. The app only
 ever touches the `Expenses` table. (Template source: `tools/make_template.py`.)
 
-### Roles: founders vs everyone else
+### Who may file, who may approve
 
-- **Founders** (Marnix, Stijn, Anton — the `approvers` list in
-  `js/config.js`) see the company-wide **Dashboard** and the **Approvals**
-  tab with a badge showing how many expenses are waiting. One tap on
-  Approve/Reject writes Status + who decided + when back into the Excel row,
-  with the receipt link on each card for checking the actual document.
+- **Filing is open to the whole company — and to nobody else.** Anyone with an
+  Arqus Microsoft 365 account can submit expenses; no per-person setup, no
+  invitations to maintain. After sign-in the app checks the account against
+  `tenantId` and `allowedEmailDomains` in `js/config.js`: an account from
+  another directory, a personal Microsoft account, or a guest invited into the
+  tenant is refused on the spot, before any Graph call is made, and sees a
+  "this app is for Arqus accounts only" card instead of the app.
+- **Approving is limited to the three founders** — Marnix, Stijn and Anton,
+  the `approvers` list in `js/config.js`. They see the company-wide
+  **Dashboard** and the **Approvals** tab with a badge showing how many
+  expenses are waiting. One tap on Approve/Reject writes Status + who decided
+  + when back into the Excel row, with the receipt link on each card for
+  checking the actual document. Approver rights are checked on the call that
+  writes the decision, not just by hiding the tab, so a non-approver poking
+  around in the browser console gets an error rather than a decided row.
 - **Everyone else** doesn't get the company dashboard at all. Instead they
   get **My expenses**: a personal record of everything they have filed
   (date, vendor, amounts, approval status, receipt link) plus their own
   monthly/yearly totals — and nothing about anyone else's spending.
 - Everyone submits; new expenses start as **Pending**.
 
-Preview either role without signing in: `?demo=1` (founder view) or
-`?demo=employee` (restricted view).
+Preview each case without signing in: `?demo=1` (founder view),
+`?demo=employee` (restricted view) or `?demo=outsider` (refused account).
 
 ### Do we need AI? (assessment)
 
@@ -137,6 +147,10 @@ In [`js/config.js`](js/config.js) set:
 - `clientId` — the ID from step 1
 - `sitePath` — the SharePoint site to store expenses in (e.g. `/sites/Finance`)
 - check `tenant`, `siteHostname`, and the `approvers` list
+- `tenantId` + `allowedEmailDomains` — who may use the app at all (see
+  "Who may file, who may approve"). `tenantId` is the **Directory (tenant) ID**
+  from the Entra ID Overview page; for Arqus it is already filled in. Leaving
+  it `""` falls back to the domain check alone.
 
 ### 3. Turn on GitHub Pages
 
@@ -157,7 +171,11 @@ menu → **Add to Home Screen** — from then on it behaves like an app.
   "keep honest people out" filter.
 - **Real security is the Microsoft sign-in.** Only accounts in the Arqus
   tenant get in, all writes are audited under the real user, and access can
-  be revoked centrally in Entra ID like any other app.
+  be revoked centrally in Entra ID like any other app. On top of the
+  single-tenant app registration the app verifies the signed-in account's
+  `tid` claim and address domain itself, so a guest account invited into the
+  tenant — or any account from elsewhere — is refused even if the
+  registration is later loosened.
 - Role separation (founder dashboard vs personal list) and approver rights
   are enforced **in the app's UI**, not by SharePoint permissions. Because
   employees write rows to the workbook as themselves, they necessarily have
@@ -181,8 +199,9 @@ Regenerate the embedded Excel template after changing columns:
 `js/xlsx-template.js` in place (keep `COLUMNS` in `js/config.js` in sync).
 
 Regression suite — drives the real UI (gate, submit, review/undo, credits and
-their approval, dashboard charts, approvals, employee role) and fails on any
-console error:
+their approval, dashboard charts, approvals, employee role, and the
+file/approve permission rules incl. a refused non-company account) and fails
+on any console error:
 
 ```bash
 python3 -m http.server 8123 &

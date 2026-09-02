@@ -46,7 +46,23 @@ export function currentUser() {
   return {
     name: account.name || account.username,
     email: (account.username || "").toLowerCase(),
+    // Directory the account belongs to ("tid" claim); the app refuses any
+    // account outside the company tenant (see config.isCompanyAccount).
+    tenantId: (account.tenantId || account.idTokenClaims?.tid || "").toLowerCase(),
   };
+}
+
+// Drop the cached account without a round-trip to Microsoft, so a refused
+// sign-in doesn't come straight back on the next page load.
+export function forgetAccount() {
+  const app = client();
+  if (account) {
+    // clearCache is the v3 API; removeAccount is kept as a fallback.
+    if (typeof app.clearCache === "function") app.clearCache({ account });
+    else app.removeAccount?.(account);
+  }
+  account = null;
+  sessionStorage.clear();
 }
 
 // Access token for Microsoft Graph; silently refreshed, falls back to a
