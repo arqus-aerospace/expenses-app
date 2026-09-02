@@ -1,7 +1,8 @@
 // End-to-end regression suite. Drives the real UI in demo mode: access-code
 // gate, submit, the review/undo countdown, credits (incl. that they require
-// approval), the dashboard charts, approvals, and the restricted employee
-// role. Screenshots are written for eyeballing layout.
+// approval), the dashboard charts, approvals, the restricted employee role,
+// and who may file/approve at all (company accounts only; approvals limited
+// to the three founders). Screenshots are written for eyeballing layout.
 //
 //   python3 -m http.server 8123 &      # serve the app
 //   npm i playwright && node tools/e2e.mjs
@@ -9,6 +10,7 @@
 // Exits non-zero on any failed assertion or console error.
 import fs from "node:fs";
 import { chromium } from "playwright";
+import { CONFIG, isApprover, isCompanyAccount } from "../js/config.js";
 
 // Screenshots land in $SHOTS (default ./.screenshots, gitignored).
 // CHROMIUM_PATH pins a browser when Playwright's own download is unavailable.
@@ -165,6 +167,61 @@ async function run(scheme, mobile) {
   await ctx.close();
 }
 
+// Who may file and who may approve — the rules straight from config.js.
+function checkRules() {
+  const T = CONFIG.tenantId;
+  const MSA = "9188040d-6c67-4c5b-b112-36a304b66dad";
+  const cases = [
+    // [email, tenantId, mayFile, mayApprove, label]
+    ["marnix@arqusaerospace.com", T, true, true, "founder Marnix"],
+    ["stijn@arqusaerospace.com", T, true, true, "founder Stijn"],
+    ["anton@arqusaerospace.com", T, true, true, "founder Anton"],
+    ["MARNIX@ArqusAerospace.com", T, true, true, "founder, mixed case"],
+    ["elena@arqusaerospace.com", T, true, false, "company employee"],
+    ["tom@arqusaerospace.com", T, true, false, "company employee"],
+    ["visitor@example.com", "00000000-0000-0000-0000-000000000000", false, false, "other tenant"],
+    ["guest@gmail.com", T, false, false, "guest invited into the tenant"],
+    ["marnix@arqusaerospace.com", MSA, false, false, "personal Microsoft account"],
+    ["marnix@arqusaerospace.com", "", false, false, "no tenant claim"],
+    ["", T, false, false, "no address"],
+  ];
+  for (const [email, tenantId, mayFile, mayApprove, label] of cases) {
+    const u = { email, tenantId };
+    if (isCompanyAccount(u) !== mayFile) {
+      errors.push(`[rules] ${label}: may file should be ${mayFile}`);
+    }
+    if (isApprover(u) !== mayApprove) {
+      errors.push(`[rules] ${label}: may approve should be ${mayApprove}`);
+    }
+  }
+  if (CONFIG.approvers.length !== 3) {
+    errors.push(`[rules] expected 3 approvers, found ${CONFIG.approvers.length}`);
+  }
+  console.log(`rules: ok — ${cases.length} file/approve cases`);
+}
+
+// A non-company account gets turned away: no app, nothing to file with.
+async function runOutsider() {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  page.on("console", (m) => { if (m.type() === "error") errors.push(`[outsider] ${m.text()}`); });
+  page.on("pageerror", (e) => errors.push(`[outsider] pageerror: ${e.message}`));
+  await page.goto(URL.replace("demo=1", "demo=outsider"));
+  await page.fill("#gate-input", "1876");
+  await page.click("#gate-btn");
+  await page.waitForSelector("#demo-btn", { state: "visible" });
+  await page.click("#demo-btn");
+
+  await page.waitForSelector("#connect-blocked:not([hidden])");
+  if (await page.locator("#screen-app").isVisible()) errors.push("[outsider] reached the app");
+  if (await page.locator("#connect-ready").isVisible()) errors.push("[outsider] sign-in card still shown");
+  const who = await page.textContent("#blocked-account");
+  if (!who.includes("@")) errors.push(`[outsider] blocked card names no account: "${who}"`);
+  await page.screenshot({ path: `${OUT}/shot-blocked-outsider.png` });
+  console.log(`outsider: ok — refused (${who}), app never opened`);
+  await ctx.close();
+}
+
 // Non-founder (employee) role: no dashboard/approvals, personal list instead.
 async function runEmployee() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
@@ -190,6 +247,11 @@ async function runEmployee() {
   if (!month.trim()) errors.push("[employee] personal KPI empty");
   await page.screenshot({ path: `${OUT}/shot-mine-employee.png`, fullPage: true });
 
+  // forcing the hidden approvals tab must not open a queue to decide on
+  await page.evaluate(() => document.getElementById("tab-approvals").click());
+  if (await page.locator("#view-approvals").isVisible()) errors.push("[employee] approvals view opened");
+  if (await page.locator(".approval-card").count()) errors.push("[employee] approval cards rendered");
+
   // an employee submission shows up in their own list
   page.once("dialog", (d) => d.accept());
   await page.click('.tab[data-view="submit"]');
@@ -208,10 +270,12 @@ async function runEmployee() {
   await ctx.close();
 }
 
+checkRules();
 await run("light", false);
 await run("dark", false);
 await run("light", true);
 await runEmployee();
+await runOutsider();
 
 if (errors.length) {
   console.log("\nERRORS:");

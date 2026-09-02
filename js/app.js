@@ -1,5 +1,5 @@
-import { CONFIG, isConfigured, isApprover } from "./config.js";
-import { initAuth, signIn, signOut, currentUser } from "./auth.js";
+import { CONFIG, isConfigured, isApprover, isCompanyAccount } from "./config.js";
+import { initAuth, signIn, signOut, forgetAccount, currentUser } from "./auth.js";
 import * as graph from "./graph.js";
 import { computeStats, cumulativeSeries, lastMonths, monthLabel, fmtMoney } from "./stats.js";
 import { columnChart, lineChart, hbarChart, sparkline } from "./charts.js";
@@ -42,6 +42,11 @@ const api = {
     await graph.addExpense({ ...exp, receiptName, receiptUrl });
   },
   async decide(item, status) {
+    // Approving is what this guard protects: hiding the tab is presentation,
+    // this is the only path that writes a decision into the workbook.
+    if (!isApprover(user)) {
+      throw new Error("Only Marnix, Stijn or Anton can approve expenses.");
+    }
     if (demo) {
       const row = demoStore.find((e) => e.id === item.id);
       row.status = status;
@@ -89,8 +94,7 @@ async function startAuth() {
   try {
     const account = await initAuth();
     if (account) {
-      user = currentUser();
-      enterApp();
+      admit(currentUser());
     } else {
       show($("screen-connect"));
     }
@@ -102,6 +106,28 @@ async function startAuth() {
   }
 }
 
+// Filing expenses is open to every company Microsoft 365 account — and to no
+// other account. This is the one door into the app: anything that isn't an
+// Arqus account is turned away here, before a single Graph call is made.
+function admit(u) {
+  if (!isCompanyAccount(u)) {
+    showBlocked(u);
+    return;
+  }
+  user = u;
+  enterApp();
+}
+
+function showBlocked(u) {
+  user = null;
+  show($("screen-app"), false);
+  show($("screen-connect"));
+  show($("connect-ready"), false);
+  show($("connect-unconfigured"), false);
+  $("blocked-account").textContent = u?.email || u?.name || "an unknown account";
+  show($("connect-blocked"));
+}
+
 function enterApp() {
   show($("screen-connect"), false);
   show($("screen-app"));
@@ -110,7 +136,7 @@ function enterApp() {
   $("signout-btn").textContent = demo ? "Exit demo" : "Sign out";
   // Founders get the company-wide dashboard and approvals; everyone else
   // gets a personal record of their own filings instead.
-  founder = isApprover(user.email);
+  founder = isApprover(user);
   show($("tab-dashboard"), founder);
   show($("tab-approvals"), founder);
   show($("tab-mine"), !founder);
@@ -598,6 +624,12 @@ async function updateApprovalsBadge() {
 }
 
 async function renderApprovals() {
+  if (!isApprover(user)) {
+    $("approvals-list").innerHTML = "";
+    show($("approvals-loading"), false);
+    show($("approvals-empty"), false);
+    return;
+  }
   show($("approvals-loading"));
   show($("approvals-empty"), false);
   $("approvals-list").innerHTML = "";
@@ -671,12 +703,26 @@ function wireChrome() {
   $("demo-btn").addEventListener("click", () => {
     demo = true;
     demoStore = demoExpenses();
-    // ?demo=employee previews the restricted (non-founder) experience
-    const asEmployee = new URLSearchParams(location.search).get("demo") === "employee";
-    user = asEmployee
-      ? { name: "Elena (demo)", email: "elena@arqusaerospace.com" }
-      : { name: "Marnix (demo)", email: CONFIG.approvers[0] };
-    enterApp();
+    // ?demo=employee previews the restricted (non-founder) experience,
+    // ?demo=outsider what a non-company account gets (nothing).
+    const as = new URLSearchParams(location.search).get("demo");
+    const tenantId = CONFIG.tenantId;
+    admit(
+      as === "outsider"
+        ? { name: "Outside Visitor (demo)", email: "visitor@example.com",
+            tenantId: "00000000-0000-0000-0000-000000000000" }
+        : as === "employee"
+          ? { name: "Elena (demo)", email: "elena@arqusaerospace.com", tenantId }
+          : { name: "Marnix (demo)", email: CONFIG.approvers[0], tenantId });
+  });
+  $("blocked-signout-btn").addEventListener("click", () => {
+    if (demo) { location.reload(); return; }
+    // Sign out at Microsoft so the account picker comes back up; if that
+    // fails, at least drop the cached account locally.
+    Promise.resolve().then(signOut).catch(() => {
+      forgetAccount();
+      location.reload();
+    });
   });
   $("gate-btn").addEventListener("click", tryUnlock);
   $("gate-input").addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });

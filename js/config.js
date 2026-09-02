@@ -19,6 +19,16 @@ export const CONFIG = {
   clientId: "ca05b475-986e-4b68-be8b-f388e0070a89",                                // e.g. "6f1b2c3d-...."
   tenant: "arqusaerospace.com",                // your M365 tenant domain
 
+  // -- Who may use the app at all --------------------------------------------
+  // Filing expenses is open to everyone with a company Microsoft 365 account —
+  // and to nobody else. Two checks run after sign-in (see isCompanyAccount):
+  //   tenantId            the directory the account must live in ("tid" claim).
+  //                       This is what keeps invited guests and personal
+  //                       Microsoft accounts out; leave "" to skip the check.
+  //   allowedEmailDomains the domains a sign-in address may end in.
+  tenantId: "234c9a25-2a21-4de0-97d2-e5136f5c9b5f",   // Arqus Aerospace directory
+  allowedEmailDomains: ["arqusaerospace.com"],
+
   // -- SharePoint destination -------------------------------------------------
   // The site that holds the expense archive + workbook. The app stores
   // everything in the site's default "Documents" library.
@@ -33,7 +43,8 @@ export const CONFIG = {
   tableName: "Expenses",                       // Excel table the app maintains
 
   // -- Approval --------------------------------------------------------------
-  // Only these people see the Approvals tab and can approve/reject.
+  // Only these people see the Approvals tab and can approve/reject; every
+  // other company account can file expenses and see its own filings only.
   approvers: [
     "marnix@arqusaerospace.com",
     "stijn@arqusaerospace.com",
@@ -83,6 +94,30 @@ export const COLUMNS = [
 
 export const isConfigured = () => Boolean(CONFIG.clientId);
 
-export const isApprover = (email) =>
-  Boolean(email) &&
-  CONFIG.approvers.some((a) => a.toLowerCase() === email.toLowerCase());
+const norm = (s) => String(s ?? "").trim().toLowerCase();
+
+// Every consumer ("personal") Microsoft account reports this well-known
+// tenant, so it is refused even when tenantId above is left empty.
+const PERSONAL_ACCOUNT_TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
+
+// Is this a Microsoft 365 account of the company itself?
+// Takes the object returned by auth.currentUser(): { email, tenantId }.
+// Guests invited into the tenant fail the domain check, accounts from another
+// tenant (and personal accounts) fail the tenant check.
+export function isCompanyAccount(user) {
+  const email = norm(user?.email);
+  const tenantId = norm(user?.tenantId);
+  if (!email.includes("@")) return false;
+  if (tenantId === PERSONAL_ACCOUNT_TENANT) return false;
+  if (CONFIG.tenantId && tenantId !== norm(CONFIG.tenantId)) return false;
+  const domain = email.slice(email.lastIndexOf("@") + 1);
+  return CONFIG.allowedEmailDomains.some((d) => norm(d) === domain);
+}
+
+// May this user approve/reject? Approver rights are never granted to an
+// account that isn't a company account in the first place.
+export function isApprover(user) {
+  if (!isCompanyAccount(user)) return false;
+  const email = norm(user?.email);
+  return CONFIG.approvers.some((a) => norm(a) === email);
+}
