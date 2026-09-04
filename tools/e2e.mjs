@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import { chromium } from "playwright";
 import { CONFIG, isApprover, isCompanyAccount } from "../js/config.js";
+import { NO_ACCESS_TEXT, isAccessDenied, explainError, errorDetail } from "../js/errors.js";
 
 // Screenshots land in $SHOTS (default ./.screenshots, gitignored).
 // CHROMIUM_PATH pins a browser when Playwright's own download is unavailable.
@@ -47,6 +48,7 @@ async function run(scheme, mobile) {
   await page.click("#demo-btn");
   await page.waitForSelector("#view-submit:not([hidden])");
   if (await page.locator("#tab-dashboard").isHidden()) errors.push(`[${scheme}] founder missing dashboard tab`);
+  if (await page.locator("#access-warning").isVisible()) errors.push(`[${scheme}] access banner shown with access`);
   if (await page.locator("#tab-mine").isVisible()) errors.push(`[${scheme}] founder should not see My-expenses tab`);
   await page.screenshot({ path: `${OUT}/shot-submit-${scheme}${mobile ? "-mobile" : ""}.png` });
 
@@ -200,6 +202,38 @@ function checkRules() {
   console.log(`rules: ok — ${cases.length} file/approve cases`);
 }
 
+// A refused SharePoint write must come out as something the employee can act
+// on, not as Graph's bare "Access denied".
+function checkErrors() {
+  const denied = { message: "Access denied", status: 403, code: "accessDenied" };
+  const denied403 = { message: "Access denied", status: 403 };
+  const expired = { message: "token expired", status: 401 };
+  const other = { message: "Item not found", status: 404, code: "itemNotFound" };
+
+  for (const [err, want, label] of [
+    [denied, true, "403 + accessDenied"],
+    [denied403, true, "bare 403"],
+    [{ message: "x", code: "accessDenied" }, true, "code only"],
+    [expired, false, "401"],
+    [other, false, "404"],
+    [undefined, false, "no error"],
+  ]) {
+    if (isAccessDenied(err) !== want) errors.push(`[errors] ${label}: isAccessDenied should be ${want}`);
+  }
+  if (explainError(denied) !== NO_ACCESS_TEXT) errors.push("[errors] 403 not explained");
+  if (!/Marnix, Stijn or Anton/.test(explainError(denied))) errors.push("[errors] 403 names nobody to ask");
+  if (!/sign out/i.test(explainError(expired))) errors.push("[errors] 401 not explained");
+  if (explainError(other) !== "Item not found") errors.push("[errors] other error text lost");
+  if (explainError(undefined) !== "Something went wrong.") errors.push("[errors] missing error not handled");
+  if (errorDetail(denied) !== "Microsoft Graph said: Access denied (accessDenied, HTTP 403)") {
+    errors.push(`[errors] detail line wrong: "${errorDetail(denied)}"`);
+  }
+  if (errorDetail({}) !== "Microsoft Graph said: Access denied") {
+    errors.push(`[errors] empty detail line wrong: "${errorDetail({})}"`);
+  }
+  console.log("errors: ok — access-denied messages are actionable");
+}
+
 // A non-company account gets turned away: no app, nothing to file with.
 async function runOutsider() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
@@ -271,6 +305,7 @@ async function runEmployee() {
 }
 
 checkRules();
+checkErrors();
 await run("light", false);
 await run("dark", false);
 await run("light", true);
