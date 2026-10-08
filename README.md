@@ -164,6 +164,23 @@ submitted expense auto-creates the `Expenses` folder, the receipts structure
 and the workbook. Tell the team to open the site on their phone → browser
 menu → **Add to Home Screen** — from then on it behaves like an app.
 
+### "Access denied" when someone submits
+
+The app writes to SharePoint **as the signed-in user**, so filing an expense
+requires that person to have edit rights on the site named by `sitePath`
+(`/sites/Finance`). Founders own that site; an employee who was never added to
+it signs in fine and then gets a 403 from Graph on the first write.
+
+The fix is a SharePoint grant, not a code change: add the team to the site's
+**Members** group (site → gear → *Site permissions* → *Add members*; on a
+group-connected site, add them to the Microsoft 365 group). A missing
+SharePoint license on the account produces the same 403.
+
+The app tells people this itself rather than passing Graph's bare "Access
+denied" through: it checks the library once when the app opens and shows a
+banner above the form (with the Graph error code in small print for whoever
+is debugging), so nobody types a whole expense before finding out.
+
 ## Security — read this once
 
 - **The access code (1876) is a courtesy lock, not security.** It lives

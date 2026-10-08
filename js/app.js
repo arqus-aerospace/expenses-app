@@ -4,6 +4,7 @@ import * as graph from "./graph.js";
 import { computeStats, cumulativeSeries, lastMonths, monthLabel, fmtMoney } from "./stats.js";
 import { columnChart, lineChart, hbarChart, sparkline } from "./charts.js";
 import { demoExpenses } from "./demo.js";
+import { NO_ACCESS_TEXT, isAccessDenied, explainError, errorDetail } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -128,6 +129,15 @@ function showBlocked(u) {
   show($("connect-blocked"));
 }
 
+// Show the banner for an access problem, hide it for anything else (a network
+// blip shouldn't tell someone their permissions are wrong).
+function showAccessWarning(err) {
+  if (!err || !isAccessDenied(err)) { show($("access-warning"), false); return; }
+  $("access-warning-text").textContent = NO_ACCESS_TEXT;
+  $("access-warning-detail").textContent = errorDetail(err);
+  show($("access-warning"));
+}
+
 function enterApp() {
   show($("screen-connect"), false);
   show($("screen-app"));
@@ -141,9 +151,13 @@ function enterApp() {
   show($("tab-approvals"), founder);
   show($("tab-mine"), !founder);
   if (!demo) {
+    show($("access-warning"), false);
     graph.workbookWebUrl()
       .then((url) => { $("workbook-link").href = url; show($("workbook-link")); })
       .catch(() => {});
+    // Check we can reach the library at all, so someone without access learns
+    // now rather than after typing an expense and waiting out the countdown.
+    graph.resolveDrive().then(() => showAccessWarning(null), showAccessWarning);
     // warm the connection so first submit is fast, and prime the approvals badge
     refreshData().then(updateApprovalsBadge).catch(() => {});
   } else {
@@ -422,7 +436,10 @@ async function finishReview(manual) {
     reviewExp = null;
     show($("review-card"), false);
     show(document.querySelector("#view-submit .form-card"));
-    toast(`Could not submit: ${err.message}`);
+    showAccessWarning(err);
+    toast(isAccessDenied(err)
+      ? "Could not submit — your account has no access to the expenses site."
+      : `Could not submit: ${explainError(err)}`);
   }
 }
 
@@ -446,7 +463,7 @@ async function renderDashboard() {
   try {
     if (!expenses) await refreshData();
   } catch (e) {
-    $("dash-loading").textContent = `Could not load expenses: ${e.message}`;
+    $("dash-loading").textContent = `Could not load expenses: ${explainError(e)}`;
     return;
   }
   show($("dash-loading"), false);
@@ -564,7 +581,8 @@ async function renderMine() {
   try {
     if (!expenses) await refreshData();
   } catch (e) {
-    $("mine-loading").textContent = `Could not load: ${e.message}`;
+    $("mine-loading").textContent = `Could not load: ${explainError(e)}`;
+    showAccessWarning(e);
     return;
   }
   show($("mine-loading"), false);
@@ -636,7 +654,7 @@ async function renderApprovals() {
   try {
     await refreshData();
   } catch (e) {
-    $("approvals-loading").textContent = `Could not load: ${e.message}`;
+    $("approvals-loading").textContent = `Could not load: ${explainError(e)}`;
     return;
   }
   show($("approvals-loading"), false);
@@ -674,7 +692,7 @@ async function renderApprovals() {
         updateApprovalsBadge();
       } catch (e) {
         card.classList.remove("busy");
-        toast(`Could not update: ${e.message}`);
+        toast(`Could not update: ${explainError(e)}`);
       }
     };
     card.querySelector(".approve").addEventListener("click", () => act("Approved"));
